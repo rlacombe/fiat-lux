@@ -1,13 +1,17 @@
-"""Voice input — microphone capture and local Whisper transcription.
+"""Voice input/output — microphone capture, Whisper transcription, and TTS.
 
 Requires optional dependencies: `uv sync --extra voice`
   - openai-whisper (local speech-to-text)
   - sounddevice (microphone capture)
+
+TTS uses macOS `say` command — no extra deps needed.
 """
 
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -23,6 +27,9 @@ CHANNELS = 1  # mono
 SILENCE_THRESHOLD = 0.01  # RMS below this = silence
 SILENCE_DURATION = 1.5  # seconds of silence to auto-stop
 MAX_DURATION = 15  # max recording seconds
+
+# Set by agent.py to enable volume meter display
+_console = None
 
 # Lazy-loaded Whisper model
 _model = None
@@ -81,6 +88,13 @@ def record_until_silence(
             chunks.append(audio.copy())
 
             level = _rms(audio)
+
+            # Show volume meter if console is available
+            if _console is not None:
+                bar = format_volume_bar(level)
+                status = "[lux.highlight]recording[/lux.highlight]" if has_speech else "[lux.dim]waiting[/lux.dim]"
+                _console.print(f"\r  {bar} {status}", end="")
+
             if level > threshold:
                 has_speech = True
                 silence_chunks = 0
@@ -90,6 +104,10 @@ def record_until_silence(
             # Stop after enough silence, but only if we heard speech first
             if has_speech and silence_chunks >= silence_limit:
                 break
+
+    # Clear the volume meter line
+    if _console is not None:
+        _console.print("\r" + " " * 60 + "\r", end="")
 
     if not has_speech:
         return None
@@ -143,3 +161,39 @@ def listen_once() -> str | None:
     if audio is None:
         return None
     return transcribe(audio)
+
+
+# ---------------------------------------------------------------------------
+# Text-to-speech via macOS `say`
+# ---------------------------------------------------------------------------
+
+TTS_VOICE = "Samantha"  # high-quality macOS voice
+
+
+def speak(text: str, voice: str = TTS_VOICE) -> None:
+    """Speak text aloud using macOS TTS. Non-blocking."""
+    if sys.platform != "darwin":
+        return
+    # Strip markdown-style formatting that sounds weird spoken
+    clean = text.replace("**", "").replace("*", "").replace("`", "")
+    # Limit length — don't read back huge responses
+    if len(clean) > 500:
+        clean = clean[:500] + "..."
+    try:
+        subprocess.Popen(
+            ["say", "-v", voice, clean],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except FileNotFoundError:
+        pass  # `say` not available
+
+
+# ---------------------------------------------------------------------------
+# Volume meter for recording feedback
+# ---------------------------------------------------------------------------
+
+def format_volume_bar(rms_level: float, width: int = 20) -> str:
+    """Format a volume level as a visual bar. Returns a string like '|||||     '."""
+    filled = min(width, int(rms_level * width * 10))  # scale up for visibility
+    return "\u2588" * filled + "\u2591" * (width - filled)

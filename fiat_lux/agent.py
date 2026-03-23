@@ -213,6 +213,63 @@ async def _send_to_daemon(prompt: str) -> None:
         await writer.wait_closed()
 
 
+def _send_with_tts(prompt: str, speak_fn) -> None:
+    """Send a prompt and speak the response aloud."""
+    if not _daemon_running():
+        _start_daemon()
+
+    try:
+        asyncio.run(_send_to_daemon_tts(prompt, speak_fn))
+    except (ConnectionRefusedError, FileNotFoundError):
+        console.print("[lux.warn]Connection lost. Restarting daemon...[/lux.warn]")
+        _stop_daemon()
+        time.sleep(0.5)
+        _start_daemon()
+        asyncio.run(_send_to_daemon_tts(prompt, speak_fn))
+
+
+async def _send_to_daemon_tts(prompt: str, speak_fn) -> None:
+    """Send prompt, display response, and speak it."""
+    reader, writer = await asyncio.open_unix_connection(str(SOCKET_PATH))
+
+    try:
+        writer.write(json.dumps({"prompt": prompt}).encode() + b"\n")
+        await writer.drain()
+
+        first_text = True
+        all_text = []
+        while True:
+            line = await asyncio.wait_for(reader.readline(), timeout=SEND_TIMEOUT)
+            if not line:
+                break
+
+            msg = json.loads(line.decode())
+
+            if msg["type"] == "text":
+                if first_text:
+                    console.print()
+                    console.print("[lux.label]Lux:[/lux.label]")
+                    first_text = False
+                console.print(Markdown(msg["text"]), style="lux.text")
+                all_text.append(msg["text"])
+            elif msg["type"] == "tool":
+                console.print(f"[lux.tool]  -> {msg['name']}[/lux.tool]")
+            elif msg["type"] == "error":
+                console.print(f"[lux.error]Error: {msg['text']}[/lux.error]")
+            elif msg["type"] == "done":
+                break
+
+        # Speak the combined response
+        if all_text:
+            speak_fn(" ".join(all_text))
+
+    except asyncio.TimeoutError:
+        console.print("[lux.error]Daemon not responding (timed out).[/lux.error]")
+    finally:
+        writer.close()
+        await writer.wait_closed()
+
+
 def _send(prompt: str) -> None:
     """Send a prompt, auto-starting the daemon if needed."""
     if not _daemon_running():
@@ -330,30 +387,34 @@ def main() -> None:
 
 
 def _load_voice_model():
-    """Load Whisper model with a spinner. Returns listen_once or None."""
+    """Load Whisper model with a spinner. Returns (listen_once, speak) or (None, None)."""
     try:
-        from fiat_lux.voice import ensure_model, listen_once
+        from fiat_lux.voice import ensure_model, listen_once, speak
+        import fiat_lux.voice as voice_mod
+        voice_mod._console = console
     except ImportError:
         console.print(
             "[lux.error]Voice dependencies not installed.[/lux.error]\n"
             "[lux.dim]Install with: uv sync --extra voice[/lux.dim]"
         )
-        return None
+        return None, None
 
     with console.status("[lux.highlight]Loading voice model...", spinner="dots"):
         try:
             ensure_model()
         except ImportError as e:
             console.print(f"[lux.error]{e}[/lux.error]")
-            return None
+            return None, None
 
-    return listen_once
+    return listen_once, speak
 
 
 def _do_voice_in_repl() -> None:
     """Handle a single voice command from within the REPL."""
     try:
-        from fiat_lux.voice import ensure_model, listen_once
+        from fiat_lux.voice import ensure_model, listen_once, speak
+        import fiat_lux.voice as voice_mod
+        voice_mod._console = console
     except ImportError:
         console.print(
             "[lux.error]Voice deps not installed.[/lux.error] "
@@ -368,7 +429,7 @@ def _do_voice_in_repl() -> None:
             console.print(f"[lux.error]{e}[/lux.error]\n")
             return
 
-    console.print("[lux.highlight]Listening...[/lux.highlight] (speak, then pause)")
+    console.print("[lux.highlight]Listening...[/lux.highlight]")
     try:
         text = listen_once()
     except ImportError as e:
@@ -376,16 +437,16 @@ def _do_voice_in_repl() -> None:
         return
 
     if text:
-        console.print(f"[lux.user]You:[/lux.user] {text}\n")
-        _send(text)
+        console.print(f"\n[lux.user]You:[/lux.user] {text}\n")
+        _send_with_tts(text, speak)
         console.print()
     else:
         console.print("[lux.dim]No speech detected.[/lux.dim]\n")
 
 
 def _listen_once() -> None:
-    """One-shot voice command: record → transcribe → send."""
-    listen_once = _load_voice_model()
+    """One-shot voice command: record → transcribe → send → speak."""
+    listen_once, speak = _load_voice_model()
     if listen_once is None:
         return
 
@@ -399,17 +460,18 @@ def _listen_once() -> None:
         console.print(f"[lux.error]{e}[/lux.error]")
         return
     if text:
-        console.print(f"[lux.user]You:[/lux.user] {text}\n")
-        _send(text)
+        console.print(f"\n[lux.user]You:[/lux.user] {text}\n")
+        _send_with_tts(text, speak)
     else:
         console.print("[lux.dim]No speech detected.[/lux.dim]")
 
 
 def _voice_interactive() -> None:
-    """Voice REPL — continuous listen loop."""
-    listen_once = _load_voice_model()
-    if listen_once is None:
+    """Voice REPL — continuous listen loop with TTS responses."""
+    result = _load_voice_model()
+    if result[0] is None:
         return
+    listen_once, speak = result
 
     if not _daemon_running():
         _start_daemon()
@@ -429,8 +491,8 @@ def _voice_interactive() -> None:
                 console.print(f"[lux.error]{e}[/lux.error]")
                 break
             if text:
-                console.print(f"[lux.user]You:[/lux.user] {text}\n")
-                _send(text)
+                console.print(f"\n[lux.user]You:[/lux.user] {text}\n")
+                _send_with_tts(text, speak)
                 console.print()
             else:
                 console.print("[lux.dim]...[/lux.dim]")
