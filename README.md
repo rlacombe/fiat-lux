@@ -197,9 +197,15 @@ Lux stores everything in `~/.config/fiat_lux/`:
 
 ## MCP Server
 
-Fiat-Lux exposes all its lighting tools as an MCP server — any AI agent can plug in and control your lights with circadian intelligence, weather awareness, and scheduling. No daemon required.
+Fiat-Lux exposes all its lighting tools as an MCP server in the `fiat_lux/mcp/` package. Any AI agent can plug in and control your lights with circadian intelligence, weather awareness, and scheduling — no daemon required.
 
-See **[MCP_SERVER.md](MCP_SERVER.md)** for the full tool reference and integration guide.
+```python
+from fiat_lux.mcp.hue import ALL_HUE_TOOLS
+from fiat_lux.mcp.circadian import get_circadian_recommendation
+from fiat_lux.mcp.weather_tools import ALL_WEATHER_TOOLS
+```
+
+See **[MCP_SERVER.md](MCP_SERVER.md)** for the full tool reference (19 tools) and integration guide.
 
 ## Requirements
 

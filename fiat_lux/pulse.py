@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from fiat_lux.tools.hue import _get_bridge
+from fiat_lux.mcp.hue import _get_bridge
 
 
 def _save_light_state(bridge, light_id: int) -> dict:

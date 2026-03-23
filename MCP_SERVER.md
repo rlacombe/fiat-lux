@@ -71,8 +71,8 @@ The Fiat-Lux daemon exposes its tools through the Claude Agent SDK's `create_sdk
 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient, create_sdk_mcp_server
 
 # Import the tools you want
-from fiat_lux.tools.hue import ALL_HUE_TOOLS
-from fiat_lux.tools.circadian import get_circadian_recommendation
+from fiat_lux.mcp.hue import ALL_HUE_TOOLS
+from fiat_lux.mcp.circadian import get_circadian_recommendation
 
 # Create the MCP server
 fiat_lux_server = create_sdk_mcp_server(

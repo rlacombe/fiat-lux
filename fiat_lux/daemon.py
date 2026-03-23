@@ -29,13 +29,13 @@ from fiat_lux.shortcuts import (
     SHORTCUT_BREATHE_STOP,
     SHORTCUT_CANDLE_START,
 )
-from fiat_lux.tools.calendar_tools import ALL_CALENDAR_TOOLS
-from fiat_lux.tools.circadian import get_circadian_recommendation
-from fiat_lux.tools.hue import ALL_HUE_TOOLS, get_lights_context
-from fiat_lux.tools.memory import ALL_MEMORY_TOOLS, get_profile_context
-from fiat_lux.tools.weather_tools import ALL_WEATHER_TOOLS
+from fiat_lux.mcp.calendar_tools import ALL_CALENDAR_TOOLS
+from fiat_lux.mcp.circadian import get_circadian_recommendation
+from fiat_lux.mcp.hue import ALL_HUE_TOOLS, get_lights_context
+from fiat_lux.mcp.memory import ALL_MEMORY_TOOLS, get_profile_context
+from fiat_lux.mcp.weather_tools import ALL_WEATHER_TOOLS
 from fiat_lux.weather import get_weather_context
-from fiat_lux.tools.scheduler_tools import ALL_SCHEDULER_TOOLS
+from fiat_lux.mcp.scheduler_tools import ALL_SCHEDULER_TOOLS
 
 SOCKET_PATH = Path.home() / ".config" / "fiat_lux" / "lux.sock"
 PID_FILE = Path.home() / ".config" / "fiat_lux" / "lux.pid"
@@ -139,7 +139,7 @@ def _resolve_light_ids(light_name: str) -> list[int] | None:
     if not light_name:
         return None
     try:
-        from fiat_lux.tools.hue import _get_bridge, _normalize
+        from fiat_lux.mcp.hue import _get_bridge, _normalize
         b = _get_bridge()
         name_map = {_normalize(l.name).lower(): l.light_id for l in b.lights}
         lid = name_map.get(_normalize(light_name).lower())

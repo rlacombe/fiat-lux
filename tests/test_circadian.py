@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from fiat_lux.tools.circadian import get_circadian_state
+from fiat_lux.mcp.circadian import get_circadian_state
 
 
 @pytest.fixture(autouse=True)

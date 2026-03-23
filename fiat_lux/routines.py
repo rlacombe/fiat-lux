@@ -10,7 +10,7 @@ from typing import Any
 
 from claude_agent_sdk import tool
 
-from fiat_lux.tools.hue import _get_bridge, _normalize
+from fiat_lux.mcp.hue import _get_bridge, _normalize
 
 CONFIG_DIR = Path.home() / ".config" / "fiat_lux"
 ROUTINES_FILE = CONFIG_DIR / "routines.json"

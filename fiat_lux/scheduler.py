@@ -18,7 +18,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from fiat_lux.tools.hue import _get_bridge, _normalize
+from fiat_lux.mcp.hue import _get_bridge, _normalize
 
 CONFIG_DIR = Path.home() / ".config" / "fiat_lux"
 SCHEDULE_FILE = CONFIG_DIR / "schedule.json"
