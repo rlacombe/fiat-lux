@@ -82,10 +82,10 @@ def get_circadian_state(now: datetime | None = None) -> dict[str, Any]:
 
 @tool(
     "get_circadian_recommendation",
-    "Get the optimal lighting recommendation for the current time of day based on "
-    "circadian science. Returns color temperature (Kelvin), brightness (%), which "
-    "lights should be active, and the current circadian mode. Use this to understand "
-    "what the ideal lighting state should be right now, then apply it via the Hue MCP.",
+    "Get the optimal lighting recommendation based on circadian science. "
+    "Automatically uses the current local time (no input needed). Returns color "
+    "temperature (Kelvin), brightness (%), which lights should be active, and the "
+    "circadian mode. Call this with no arguments, then apply the result via set_lights.",
     {"time_override": str},
 )
 async def get_circadian_recommendation(args: dict[str, Any]) -> dict[str, Any]:

@@ -31,7 +31,10 @@ BASE_SYSTEM_PROMPT = (Path(__file__).parent / "system_prompt.md").read_text()
 
 
 def _build_system_prompt() -> str:
+    from datetime import datetime
+
     parts = [BASE_SYSTEM_PROMPT]
+    parts.append(f"## Current Time\n{datetime.now().strftime('%A %Y-%m-%d %H:%M')}")
     profile = get_profile_context()
     if profile:
         parts.append(profile)
@@ -42,14 +45,23 @@ def _build_system_prompt() -> str:
 
 
 def _build_options() -> ClaudeAgentOptions:
+    all_sdk_tools = [
+        get_circadian_recommendation,
+        *ALL_HUE_TOOLS,
+        *ALL_MEMORY_TOOLS,
+        *ALL_ROUTINE_TOOLS,
+    ]
     fresnel_tools = create_sdk_mcp_server(
         name="fresnel",
         version="0.1.0",
-        tools=[get_circadian_recommendation, *ALL_HUE_TOOLS, *ALL_MEMORY_TOOLS, *ALL_ROUTINE_TOOLS],
+        tools=all_sdk_tools,
     )
+    # Pre-load tool names so Claude doesn't need ToolSearch
+    tool_names = [f"mcp__fresnel__{t.name}" for t in all_sdk_tools]
     return ClaudeAgentOptions(
         system_prompt=_build_system_prompt(),
         mcp_servers={"fresnel": fresnel_tools},
+        tools=tool_names,
         allowed_tools=["mcp__fresnel__*"],
         permission_mode="acceptEdits",
         max_turns=10,
