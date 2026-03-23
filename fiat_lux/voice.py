@@ -79,9 +79,6 @@ def record_until_silence(
     import queue
     import time as _time
 
-    from rich.live import Live
-    from rich.text import Text
-
     # Audio queue — callback pushes chunks, main thread reads them
     audio_queue: queue.Queue = queue.Queue()
 
@@ -93,9 +90,12 @@ def record_until_silence(
     silence_limit = int(silence_seconds / 0.1)
     has_speech = False
 
-    live_ctx = Live("", console=_console, refresh_per_second=10) if _console else None
-    if live_ctx:
-        live_ctx.start()
+    def _status(text: str) -> None:
+        """Overwrite the status line in place."""
+        if _console is not None:
+            # Use ANSI escape to clear line and write
+            _console.file.write(f"\r\033[K  {text}")
+            _console.file.flush()
 
     try:
         with sd.InputStream(
@@ -112,8 +112,6 @@ def record_until_silence(
                 try:
                     audio = audio_queue.get(timeout=0.2)
                     ambient_levels.append(_rms(audio))
-                    if live_ctx:
-                        live_ctx.update(Text("  calibrating..."))
                 except queue.Empty:
                     pass
 
@@ -131,16 +129,14 @@ def record_until_silence(
                 chunks.append(audio)
                 level = _rms(audio)
 
-                # Update volume meter
-                if live_ctx is not None:
-                    bar = format_volume_bar(level)
-                    if has_speech:
-                        status = "recording"
-                    elif level > threshold:
-                        status = "hearing you"
-                    else:
-                        status = "waiting"
-                    live_ctx.update(Text(f"  {bar} {status}"))
+                # Update volume meter — single line, overwritten
+                bar = format_volume_bar(level)
+                if has_speech:
+                    _status(f"{bar} recording")
+                elif level > threshold:
+                    _status(f"{bar} hearing you")
+                else:
+                    _status(f"{bar} waiting")
 
                 if level > threshold:
                     has_speech = True
@@ -153,8 +149,10 @@ def record_until_silence(
     except KeyboardInterrupt:
         pass
     finally:
-        if live_ctx:
-            live_ctx.stop()
+        # Clear the status line
+        if _console is not None:
+            _console.file.write("\r\033[K")
+            _console.file.flush()
 
     if not has_speech:
         return None
