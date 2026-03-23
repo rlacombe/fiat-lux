@@ -321,63 +321,44 @@ WAKE_PHRASES = {
     "hey lax", "hey luxe", "hey luks", "hey luke",
     "a lux", "haylux", "hey, lux", "he lux", "hey lex",
 }
-WAKE_LISTEN_SECONDS = 2.5  # how long each wake word check records
 
 
-def detect_wake_word() -> bool:
-    """Record a short clip and check if it contains 'Hey Lux'.
+def listen_for_wake_command() -> str | None:
+    """Continuously listen, and when speech starts, record it all.
 
-    Returns True if wake word detected, False otherwise.
-    Designed to be called in a tight loop for always-on listening.
+    Transcribes the result. If it starts with 'Hey Lux', strips the
+    wake word and returns the command. If no wake word, returns None.
+
+    This captures "Hey Lux, turn my lights blue" in a single recording.
     """
-    import numpy as np
-    import sounddevice as sd
-    import queue
+    audio = record_until_silence()
+    if audio is None:
+        return None
 
-    audio_queue: queue.Queue = queue.Queue()
+    # Transcribe
+    if _console is not None:
+        with _console.status("[lux.highlight]Transcribing...", spinner="dots"):
+            text = transcribe(audio)
+    else:
+        text = transcribe(audio)
 
-    def _callback(indata, frames, time_info, status):
-        audio_queue.put(indata.copy())
+    if not text:
+        return None
 
-    chunks = []
-    try:
-        with sd.InputStream(
-            samplerate=SAMPLE_RATE,
-            channels=CHANNELS,
-            dtype="float32",
-            blocksize=int(SAMPLE_RATE * 0.1),
-            callback=_callback,
-        ):
-            import time as _time
-            deadline = _time.monotonic() + WAKE_LISTEN_SECONDS
-            while _time.monotonic() < deadline:
-                try:
-                    audio = audio_queue.get(timeout=0.15)
-                    chunks.append(audio)
-                except queue.Empty:
-                    continue
-    except KeyboardInterrupt:
-        raise
+    text_lower = text.lower().strip()
 
-    if not chunks:
-        return False
-
-    audio = np.concatenate(chunks).flatten()
-
-    # Only transcribe if there's some audio energy (skip pure silence)
-    if _rms(audio) < 0.005:
-        return False
-
-    # Quick transcribe — check for wake word
-    model = _get_whisper_model()
-    result = model.transcribe(audio, language="en", fp16=False)
-    text = result["text"].strip().lower()
-
-    # Must START with the wake word, not just contain it
+    # Check if it starts with a wake phrase
     for phrase in WAKE_PHRASES:
-        if text.startswith(phrase):
-            return True
-    return False
+        if text_lower.startswith(phrase):
+            # Strip the wake word and return the command
+            command = text[len(phrase):].strip().lstrip(".,!?:").strip()
+            if command:
+                return command
+            # They just said "Hey Lux" with no command — return empty
+            # so the caller knows to prompt for more
+            return ""
+
+    return None
 
 
 def format_volume_bar(rms_level: float, width: int = 20) -> str:

@@ -453,11 +453,11 @@ def _do_voice_in_repl() -> None:
 
 
 def _wake_mode() -> None:
-    """Always-on wake word mode — listens for 'Hey Lux' then takes a command."""
+    """Always-on wake word mode — records speech, checks for 'Hey Lux', executes."""
     try:
         from fiat_lux.voice import (
-            detect_wake_word,
             ensure_model,
+            listen_for_wake_command,
             listen_once,
             speak,
             wait_for_speech,
@@ -482,31 +482,36 @@ def _wake_mode() -> None:
 
     def _force_exit(signum, frame):
         stop_speech()
-        console.print("\n[lux.dim]Goodbye![/lux.dim]")
         raise SystemExit(0)
 
     _signal.signal(_signal.SIGINT, _force_exit)
 
     console.print(
         "[lux.title]Lux[/lux.title] [lux.dim]--[/lux.dim] "
-        "[lux.text]wake word mode[/lux.text]\n"
-        '[lux.dim]Say "Hey Lux" to start. Press Ctrl+C to exit.[/lux.dim]\n'
+        '[lux.text]say "Hey Lux" followed by a command. Ctrl+C to exit.[/lux.text]\n'
     )
 
     while True:
-        console.print("[lux.dim]Waiting for 'Hey Lux'...[/lux.dim]", end="\r")
-        if detect_wake_word():
-            # Play a short chime-like ack so user knows Lux heard them
-            speak("Yes?")
-            wait_for_speech()
+        command = listen_for_wake_command()
 
+        if command is None:
+            # No wake word detected — keep listening
+            continue
+
+        if command == "":
+            # Just said "Hey Lux" with no command — prompt for more
+            speak("Listening.")
+            wait_for_speech()
             console.print("[lux.highlight]Listening...[/lux.highlight]")
             text = listen_once()
-            if text:
-                console.print(f"\n[lux.user]You:[/lux.user] {text}\n")
-                _send_with_tts(text, speak)
-                wait_for_speech()
-                console.print()
+            if not text:
+                continue
+            command = text
+
+        console.print(f"[lux.user]You:[/lux.user] {command}\n")
+        _send_with_tts(command, speak)
+        wait_for_speech()
+        console.print()
 
 
 if __name__ == "__main__":
