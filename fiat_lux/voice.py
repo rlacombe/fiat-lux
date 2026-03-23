@@ -71,44 +71,64 @@ def record_until_silence(
     """Record from microphone until silence is detected.
 
     Auto-calibrates the noise threshold from the first 0.5s of ambient audio.
+    Uses a callback-based stream so Ctrl+C works reliably.
     Returns a numpy array of float32 audio at 16kHz, or None if no speech detected.
     """
     import numpy as np
     import sounddevice as sd
-
-    chunk_size = int(SAMPLE_RATE * 0.1)  # 100ms chunks
-    chunks = []
-    silence_chunks = 0
-    silence_limit = int(silence_seconds / 0.1)
-    max_chunks = int(max_seconds / 0.1)
-    has_speech = False
+    import queue
+    import time as _time
 
     from rich.live import Live
     from rich.text import Text
+
+    # Audio queue — callback pushes chunks, main thread reads them
+    audio_queue: queue.Queue = queue.Queue()
+
+    def _callback(indata, frames, time_info, status):
+        audio_queue.put(indata.copy())
+
+    chunks = []
+    silence_chunks = 0
+    silence_limit = int(silence_seconds / 0.1)
+    has_speech = False
 
     live_ctx = Live("", console=_console, refresh_per_second=10) if _console else None
     if live_ctx:
         live_ctx.start()
 
     try:
-        with sd.InputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, dtype="float32") as stream:
+        with sd.InputStream(
+            samplerate=SAMPLE_RATE,
+            channels=CHANNELS,
+            dtype="float32",
+            blocksize=int(SAMPLE_RATE * 0.1),
+            callback=_callback,
+        ):
             # Calibrate: measure ambient noise for 0.5s
-            cal_chunks = int(CALIBRATION_SECONDS / 0.1)
             ambient_levels = []
-            for _ in range(cal_chunks):
-                audio, _ = stream.read(chunk_size)
-                ambient_levels.append(_rms(audio))
-                if live_ctx:
-                    live_ctx.update(Text("  calibrating..."))
+            cal_end = _time.monotonic() + CALIBRATION_SECONDS
+            while _time.monotonic() < cal_end:
+                try:
+                    audio = audio_queue.get(timeout=0.2)
+                    ambient_levels.append(_rms(audio))
+                    if live_ctx:
+                        live_ctx.update(Text("  calibrating..."))
+                except queue.Empty:
+                    pass
 
             ambient_rms = max(ambient_levels) if ambient_levels else 0.005
             threshold = ambient_rms * THRESHOLD_MULTIPLIER
 
             # Record until silence after speech
-            for _ in range(max_chunks):
-                audio, _ = stream.read(chunk_size)
-                chunks.append(audio.copy())
+            deadline = _time.monotonic() + max_seconds
+            while _time.monotonic() < deadline:
+                try:
+                    audio = audio_queue.get(timeout=0.15)
+                except queue.Empty:
+                    continue
 
+                chunks.append(audio)
                 level = _rms(audio)
 
                 # Update volume meter
@@ -131,7 +151,6 @@ def record_until_silence(
                 if has_speech and silence_chunks >= silence_limit:
                     break
     except KeyboardInterrupt:
-        # Ctrl+C during recording — return what we have or None
         pass
     finally:
         if live_ctx:
