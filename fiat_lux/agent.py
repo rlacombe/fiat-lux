@@ -435,6 +435,8 @@ def _do_voice_in_repl() -> None:
     if text:
         console.print(f"\n[lux.user]You:[/lux.user] {text}\n")
         _send_with_tts(text, speak)
+        from fiat_lux.voice import wait_for_speech
+        wait_for_speech()
         console.print()
     else:
         console.print("[lux.dim]No speech detected.[/lux.dim]\n")
@@ -458,6 +460,9 @@ def _listen_once() -> None:
     if text:
         console.print(f"\n[lux.user]You:[/lux.user] {text}\n")
         _send_with_tts(text, speak)
+        # Wait for Emma to finish speaking before exiting
+        from fiat_lux.voice import wait_for_speech
+        wait_for_speech()
     else:
         console.print("[lux.dim]No speech detected.[/lux.dim]")
 

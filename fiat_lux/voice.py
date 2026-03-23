@@ -247,8 +247,21 @@ def speak(text: str, voice: str = TTS_VOICE) -> None:
             except FileNotFoundError:
                 pass
 
-    # Run in background thread so it doesn't block
-    threading.Thread(target=_speak, daemon=True).start()
+    # Run in background thread so it doesn't block the UI
+    t = threading.Thread(target=_speak, daemon=True)
+    t.start()
+    _speak_threads.append(t)
+
+
+# Track active speak threads so we can wait for them before exit
+_speak_threads: list[threading.Thread] = []
+
+
+def wait_for_speech() -> None:
+    """Wait for all pending TTS to finish playing. Call before exiting."""
+    for t in _speak_threads:
+        t.join(timeout=30)
+    _speak_threads.clear()
 
 
 # ---------------------------------------------------------------------------
