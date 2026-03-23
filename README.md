@@ -195,6 +195,12 @@ Lux stores everything in `~/.config/fiat_lux/`:
 | `lux.sock` | Daemon Unix socket |
 | `daemon.log` | Daemon log output |
 
+## MCP Server
+
+Fiat-Lux exposes all its lighting tools as an MCP server — any AI agent can plug in and control your lights with circadian intelligence, weather awareness, and scheduling. No daemon required.
+
+See **[MCP_SERVER.md](MCP_SERVER.md)** for the full tool reference and integration guide.
+
 ## Requirements
 
 - Python 3.12+
