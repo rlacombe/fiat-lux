@@ -350,6 +350,10 @@ def _interactive() -> None:
 
 def main() -> None:
     """CLI entry point."""
+    # Suppress noisy multiprocessing semaphore leak warnings on exit
+    import warnings
+    warnings.filterwarnings("ignore", message=".*resource_tracker.*leaked semaphore.*")
+
     args = sys.argv[1:]
 
     if not args:
