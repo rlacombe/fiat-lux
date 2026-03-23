@@ -355,9 +355,9 @@ def detect_wake_word() -> bool:
     result = model.transcribe(audio, language="en", fp16=False)
     text = result["text"].strip().lower()
 
-    # Check for wake word variants
+    # Must START with the wake word, not just contain it
     for phrase in WAKE_PHRASES:
-        if phrase in text:
+        if text.startswith(phrase):
             return True
     return False
 
