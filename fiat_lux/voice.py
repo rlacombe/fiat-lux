@@ -223,7 +223,7 @@ def listen_once() -> str | None:
 # Text-to-speech via macOS `say`
 # ---------------------------------------------------------------------------
 
-TTS_VOICE = "en-US-EmmaNeural"
+TTS_VOICE = "en-US-AndrewNeural"
 
 
 def speak(text: str, voice: str = TTS_VOICE) -> None:
