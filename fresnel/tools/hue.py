@@ -44,6 +44,20 @@ def _get_bridge() -> Bridge:
     return Bridge(ip, username)
 
 
+def _normalize(name: str) -> str:
+    """Normalize smart quotes and whitespace for matching."""
+    return name.replace("\u2018", "'").replace("\u2019", "'").strip()
+
+
+def _find_group_id(b: Bridge, group_name: str) -> int | None:
+    """Find a group by name with fuzzy quote matching."""
+    target = _normalize(group_name).lower()
+    for gid, group in b.get_group().items():
+        if _normalize(group["name"]).lower() == target:
+            return int(gid)
+    return None
+
+
 def _text(text: str) -> dict[str, Any]:
     return {"content": [{"type": "text", "text": text}]}
 
@@ -282,14 +296,25 @@ async def activate_scene(args: dict[str, Any]) -> dict[str, Any]:
     scene_name = args["scene_name"]
 
     try:
-        result = b.run_scene(group_name, scene_name)
-        if result:
-            return _text(f"Activated scene '{scene_name}' in '{group_name}'.")
-        else:
+        # Find the group ID ourselves (phue's run_scene has smart-quote issues)
+        group_id = _find_group_id(b, group_name)
+        if group_id is None:
+            groups = [g["name"] for g in b.get_group().values()]
             return _error(
-                f"Could not find scene '{scene_name}' in group '{group_name}'. "
-                "Use get_hue_status to see available scenes and groups."
+                f"Unknown group '{group_name}'. Available: {', '.join(groups)}"
             )
+
+        # Find matching scene
+        target_scene = _normalize(scene_name).lower()
+        for sid, scene in b.get_scene().items():
+            if _normalize(scene.get("name", "")).lower() == target_scene:
+                b.activate_scene(group_id, sid)
+                return _text(f"Activated scene '{scene_name}' in '{group_name}'.")
+
+        return _error(
+            f"Could not find scene '{scene_name}'. "
+            "Use get_hue_status to see available scenes."
+        )
     except Exception as e:
         return _error(f"Failed to activate scene: {e}")
 
@@ -319,7 +344,7 @@ async def set_group(args: dict[str, Any]) -> dict[str, Any]:
         return _error(str(e))
 
     group_name = args["group_name"]
-    group_id = b.get_group_id_by_name(group_name)
+    group_id = _find_group_id(b, group_name)
     if group_id is None:
         groups = [g["name"] for g in b.get_group().values()]
         return _error(
