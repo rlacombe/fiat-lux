@@ -266,6 +266,9 @@ def speak(text: str, voice: str = TTS_VOICE) -> None:
             except FileNotFoundError:
                 pass
 
+    # Kill any currently playing speech first
+    _stop_current_speech()
+
     # Run in background thread so it doesn't block the UI
     t = threading.Thread(target=_speak, daemon=True)
     t.start()
@@ -274,6 +277,16 @@ def speak(text: str, voice: str = TTS_VOICE) -> None:
 
 # Track active speak threads so we can wait for them before exit
 _speak_threads: list[threading.Thread] = []
+
+
+def _stop_current_speech() -> None:
+    """Kill any currently playing afplay so we don't overlap."""
+    try:
+        subprocess.run(["pkill", "-f", "afplay"], capture_output=True)
+    except Exception:
+        pass
+    # Clean up finished threads
+    _speak_threads[:] = [t for t in _speak_threads if t.is_alive()]
 
 
 def wait_for_speech() -> None:
