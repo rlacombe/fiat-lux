@@ -285,6 +285,12 @@ async def _handle_client(
         # Inject voice mode instructions if needed
         if voice_mode:
             _inject_voice_mode(options)
+            # Prepend voice constraint directly to the prompt so Claude can't miss it
+            prompt = (
+                "[VOICE MODE — this will be read aloud. "
+                "Reply in 1-2 short sentences ONLY. No emoji, no markdown, no bullet lists. "
+                "Be a quick voice assistant.]\n\n" + prompt
+            )
         else:
             _remove_voice_mode(options)
 
