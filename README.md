@@ -4,6 +4,8 @@
 
 Meet **Lux** — a chronobiology-powered lighting agent for Philips Hue. Lux manages your lights for better focus, energy, and sleep, grounded in real photobiology research.
 
+**Now with voice mode** — say "Hey Lux, turn my lights blue" and Lux listens, acts, and talks back.
+
 <p align="center">
   <img src="docs/terminal.svg" alt="Lux terminal conversation" width="680">
 </p>
@@ -47,24 +49,19 @@ Lux: Night stand set to deep amber (2200K) at 40%. At this color temperature,
 ```
 
 ```
-You: create a "movie" routine — just the lantern at 10%, deep red
+[Voice mode]
 
-Lux: Saved routine 'movie'. Trigger it anytime by typing 'movie'.
-```
-
-```
-You: what should my lights be right now?
-
-Lux: It's 3:15 PM — Afternoon mode. 6000K at 95% on ceiling and desk.
-     This maintains the cortisol plateau and supports cognitive performance
-     through the natural post-lunch dip. Sunset today is at 7:06 PM,
-     so wind-down starts around 5:00.
+You: Hey Lux, switch to coding mode.
+Lux: Setting coding mode now.
+     → set_lights (x4)
+Lux: Done, purple on desk and library, green on the rest.
 ```
 
 ## Features
 
+- **Voice control** — say "Hey Lux" to wake, give a command, hear the response. Local Whisper STT, neural TTS, wake word detection. No cloud mic required.
 - **Instant commands** — "lights off", "bedtime", "focus", "brighter" execute directly (<1s)
-- **Named routines** — "bedtime", "morning", "focus", "relax" — customizable through conversation
+- **Named routines** — "bedtime", "morning", "focus", "coding" — customizable through conversation
 - **Ambient modes** — "candle" for flickering candlelight, "breathe" for slow breathing glow
 - **Natural language** — "make it Rilakkuma-colored", "sunset in my room" via Claude
 - **Circadian automation** — time-based lighting grounded in melanopsin sensitivity and melatonin research
@@ -73,24 +70,33 @@ Lux: It's 3:15 PM — Afternoon mode. 6000K at 95% on ceiling and desk.
 - **Calendar alerts** — synchronized light pulses before meetings (slow amber wave at T-5min, fast blue chirp at T-15s)
 - **Persistent daemon** — boots once, stays warm, every command after that is fast
 - **User memory** — Lux learns your name, room layout, sleep habits across sessions
-- **Voice input** — `lux listen` or `lux --voice` for hands-free control via local Whisper
+- **MCP server** — other AI agents can plug into Lux's lighting tools
 - **Built-in Hue control** — no external MCP servers needed
 
 ## Architecture
 
-Lux runs as a daemon with two execution paths:
+Lux runs as a daemon with three interaction modes:
 
 ```
-User input → CLI
+              ┌─ Text REPL (lux)
+User input ───┤
+              ├─ Voice ("Hey Lux")  →  Whisper STT  →  daemon  →  Edge TTS
               │
-              ├─ Shortcuts (regex + routines)  →  direct phue  < 1s
-              │
-              └─ Claude (persistent session)   →  tool calls   ~ 5s
+              └─ One-shot (lux "lights off")
+                        │
+                        ▼
+                     Daemon
+                        │
+                ├─ Shortcuts (regex + routines)  →  direct phue  < 1s
+                │
+                └─ Claude (persistent session)   →  tool calls   ~ 5s
+                │
+                └─ Background: calendar alerts, scheduler, ambient modes
 ```
 
 **Shortcuts** pattern-match common commands, named routines, and ambient modes, executing directly via phue. No LLM, no network latency.
 
-**Claude** handles everything else via a persistent `ClaudeSDKClient` session. The daemon boots the Claude Code process once and keeps it warm — subsequent messages skip the cold start.
+**Claude** handles everything else via a persistent `ClaudeSDKClient` session. The daemon boots the Claude Code process once and keeps it warm — subsequent messages skip the cold start. Voice mode uses Haiku for faster responses.
 
 **Background tasks** run in the daemon's async event loop: calendar alerts poll every 30s, the scheduler checks for due transitions every 10s, and ambient modes (candle/breathing) run continuous light animations.
 
@@ -119,15 +125,39 @@ ln -s $(uv run which lux) ~/.local/bin/lux
 
 Make sure `~/.local/bin` is in your `PATH`.
 
+### Voice mode setup
+
+Voice requires additional dependencies (Whisper + sounddevice):
+
+```bash
+uv sync --extra voice
+lux listen                 # say "Hey Lux" followed by a command
+```
+
+First run downloads the Whisper base model (~140MB). Requires an arm64 Python on Apple Silicon (`uv python install 3.12`).
+
 ## Usage
 
-The main way to use Lux is the **interactive REPL** — just type `lux` and talk:
+### Text mode
+
+The main text interface is the **interactive REPL** — just type `lux` and talk:
 
 ```bash
 lux                        # start a conversation with Lux
 ```
 
-Everything below also works as one-shot commands (`lux "lights off"`), but the REPL is where Lux shines — it remembers context, learns your preferences, and gives you a back-and-forth conversation.
+Type `listen` or `voice` inside the REPL to switch to mic input.
+
+### Voice mode
+
+```bash
+lux listen                 # always-on: "Hey Lux" wake word
+lux --voice                # same as listen
+```
+
+Say "Hey Lux" followed by your command. Lux transcribes locally with Whisper, executes, and responds aloud with a neural voice. Supports multi-turn — keep talking after a response, or pause to return to wake word mode.
+
+### All commands
 
 ```bash
 # CLI
@@ -152,6 +182,7 @@ lux "circadian"
 lux "bedtime"              # nightstand only, warm
 lux "morning"              # ceiling + desk, cool bright
 lux "focus"                # ceiling + desk, peak alertness
+lux "coding"               # your custom coding setup
 lux "reading"              # nightstand + desk, warm white
 lux "relax"                # lantern + nightstand, low amber
 lux "goodnight"            # everything off
@@ -173,10 +204,6 @@ lux "setup weather"        # auto-detect location, connect Open-Meteo
 # Calendar alerts
 lux setup calendar         # choose which calendars to monitor
 
-# Voice input (requires: uv sync --extra voice)
-lux listen                 # one-shot: speak → transcribe → execute
-lux --voice                # voice REPL: continuous listening
-
 # Natural language (~ 5s, via Claude)
 lux "make it cozy"
 lux "sunset in my room"
@@ -192,10 +219,12 @@ Lux stores everything in `~/.config/fiat_lux/`:
 | `hue.json` | Bridge IP and API credentials |
 | `user.json` | User profile and preferences |
 | `routines.json` | Named lighting presets |
-| `calendars.json` | Calendars to monitor for meeting alerts |
+| `calendars.json` | Calendars to monitor + alert light preferences |
 | `schedule.json` | Pending scheduled transitions |
 | `weather.json` | Location for weather data |
 | `weather_cache.json` | Cached weather (refreshed every 30 min) |
+| `light_map.json` | Circadian zone → light name mapping |
+| `voice.json` | Voice model configuration |
 | `history` | CLI command history |
 | `lux.sock` | Daemon Unix socket |
 | `daemon.log` | Daemon log output |
@@ -210,14 +239,15 @@ from fiat_lux.mcp.circadian import get_circadian_recommendation
 from fiat_lux.mcp.weather_tools import ALL_WEATHER_TOOLS
 ```
 
-See **[MCP_SERVER.md](MCP_SERVER.md)** for the full tool reference (19 tools) and integration guide.
+See **[MCP_SERVER.md](MCP_SERVER.md)** for the full tool reference (20+ tools) and integration guide.
 
 ## Requirements
 
-- Python 3.12+
+- Python 3.12+ (arm64 on Apple Silicon for voice mode)
 - [uv](https://docs.astral.sh/uv/)
 - A Philips Hue Bridge + Hue bulbs
 - Claude Code subscription (Pro or Max plan)
+- For voice: `uv sync --extra voice` (adds Whisper + sounddevice)
 
 ## Disclaimer
 
