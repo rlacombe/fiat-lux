@@ -27,8 +27,8 @@ class TestRMS:
 
 
 class TestRecordUntilSilence:
-    @patch("fiat_lux.voice.sd")
-    def test_detects_speech_then_silence(self, mock_sd):
+    @patch("sounddevice.InputStream")
+    def test_detects_speech_then_silence(self, mock_input_stream):
         """Should stop recording after speech followed by silence."""
         speech = np.full((1600, 1), 0.1, dtype=np.float32)
         silence = np.zeros((1600, 1), dtype=np.float32)
@@ -40,20 +40,20 @@ class TestRecordUntilSilence:
             nonlocal call_count
             call_count += 1
             if call_count <= 5:
-                return speech, None  # speech
-            return silence, None  # silence
+                return speech, None
+            return silence, None
 
         stream.read = read_side_effect
         stream.__enter__ = lambda s: s
         stream.__exit__ = lambda s, *a: None
-        mock_sd.InputStream.return_value = stream
+        mock_input_stream.return_value = stream
 
         audio = record_until_silence(max_seconds=5, silence_seconds=0.5)
         assert audio is not None
         assert len(audio) > 0
 
-    @patch("fiat_lux.voice.sd")
-    def test_returns_none_on_pure_silence(self, mock_sd):
+    @patch("sounddevice.InputStream")
+    def test_returns_none_on_pure_silence(self, mock_input_stream):
         """Should return None if no speech detected at all."""
         silence = np.zeros((1600, 1), dtype=np.float32)
 
@@ -61,7 +61,7 @@ class TestRecordUntilSilence:
         stream.read = lambda n: (silence, None)
         stream.__enter__ = lambda s: s
         stream.__exit__ = lambda s, *a: None
-        mock_sd.InputStream.return_value = stream
+        mock_input_stream.return_value = stream
 
         audio = record_until_silence(max_seconds=1)
         assert audio is None

@@ -256,7 +256,7 @@ def _interactive() -> None:
     console.print(
         "[lux.title]Lux[/lux.title] [lux.dim]--[/lux.dim] "
         "[lux.text]your chronobiology-powered lighting assistant[/lux.text]\n"
-        "[lux.dim]Type a command, or 'quit' to exit.[/lux.dim]\n"
+        "[lux.dim]Type a command, 'listen' for voice, or 'quit' to exit.[/lux.dim]\n"
     )
 
     try:
@@ -272,6 +272,11 @@ def _interactive() -> None:
             if user_input.lower() in ("quit", "exit", "q"):
                 console.print("[lux.dim]Goodbye![/lux.dim]")
                 break
+
+            # Voice input from within the REPL
+            if user_input.lower() in ("listen", "voice"):
+                _do_voice_in_repl()
+                continue
 
             readline.add_history(user_input)
 
@@ -324,15 +329,64 @@ def main() -> None:
         _send(prompt)
 
 
-def _listen_once() -> None:
-    """One-shot voice command: record → transcribe → send."""
+def _load_voice_model():
+    """Load Whisper model with a spinner. Returns listen_once or None."""
     try:
-        from fiat_lux.voice import listen_once
+        from fiat_lux.voice import ensure_model, listen_once
     except ImportError:
         console.print(
             "[lux.error]Voice dependencies not installed.[/lux.error]\n"
             "[lux.dim]Install with: uv sync --extra voice[/lux.dim]"
         )
+        return None
+
+    with console.status("[lux.highlight]Loading voice model...", spinner="dots"):
+        try:
+            ensure_model()
+        except ImportError as e:
+            console.print(f"[lux.error]{e}[/lux.error]")
+            return None
+
+    return listen_once
+
+
+def _do_voice_in_repl() -> None:
+    """Handle a single voice command from within the REPL."""
+    try:
+        from fiat_lux.voice import ensure_model, listen_once
+    except ImportError:
+        console.print(
+            "[lux.error]Voice deps not installed.[/lux.error] "
+            "[lux.dim]Run: uv sync --extra voice[/lux.dim]\n"
+        )
+        return
+
+    with console.status("[lux.highlight]Loading voice model...", spinner="dots"):
+        try:
+            ensure_model()
+        except ImportError as e:
+            console.print(f"[lux.error]{e}[/lux.error]\n")
+            return
+
+    console.print("[lux.highlight]Listening...[/lux.highlight] (speak, then pause)")
+    try:
+        text = listen_once()
+    except ImportError as e:
+        console.print(f"[lux.error]{e}[/lux.error]\n")
+        return
+
+    if text:
+        console.print(f"[lux.user]You:[/lux.user] {text}\n")
+        _send(text)
+        console.print()
+    else:
+        console.print("[lux.dim]No speech detected.[/lux.dim]\n")
+
+
+def _listen_once() -> None:
+    """One-shot voice command: record → transcribe → send."""
+    listen_once = _load_voice_model()
+    if listen_once is None:
         return
 
     if not _daemon_running():
@@ -353,13 +407,8 @@ def _listen_once() -> None:
 
 def _voice_interactive() -> None:
     """Voice REPL — continuous listen loop."""
-    try:
-        from fiat_lux.voice import listen_once
-    except ImportError:
-        console.print(
-            "[lux.error]Voice dependencies not installed.[/lux.error]\n"
-            "[lux.dim]Install with: uv sync --extra voice[/lux.dim]"
-        )
+    listen_once = _load_voice_model()
+    if listen_once is None:
         return
 
     if not _daemon_running():

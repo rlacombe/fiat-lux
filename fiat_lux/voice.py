@@ -118,6 +118,14 @@ def transcribe(audio: np.ndarray) -> str:
     return result["text"].strip()
 
 
+def ensure_model() -> None:
+    """Pre-load the Whisper model, downloading if needed.
+
+    Call this before the first listen to avoid download during recording.
+    """
+    _get_whisper_model()
+
+
 def listen_once() -> str | None:
     """Record from mic and transcribe. Returns text or None if no speech.
 
