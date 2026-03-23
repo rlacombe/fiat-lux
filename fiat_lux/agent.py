@@ -238,7 +238,7 @@ async def _send_to_daemon_tts(prompt: str, speak_fn) -> None:
         await writer.drain()
 
         first_text = True
-        spoken = False
+        text_blocks = []
         while True:
             line = await asyncio.wait_for(reader.readline(), timeout=SEND_TIMEOUT)
             if not line:
@@ -252,16 +252,20 @@ async def _send_to_daemon_tts(prompt: str, speak_fn) -> None:
                     console.print("[lux.label]Lux:[/lux.label]")
                     first_text = False
                 console.print(Markdown(msg["text"]), style="lux.text")
-                # Only speak the first text block (the short ack/summary)
-                if not spoken:
+                text_blocks.append(msg["text"])
+                # Speak the first block immediately (the ack before tools)
+                if len(text_blocks) == 1:
                     speak_fn(msg["text"])
-                    spoken = True
             elif msg["type"] == "tool":
                 console.print(f"[lux.tool]  -> {msg['name']}[/lux.tool]")
             elif msg["type"] == "error":
                 console.print(f"[lux.error]Error: {msg['text']}[/lux.error]")
             elif msg["type"] == "done":
                 break
+
+        # Speak the last block too (the confirmation after tools)
+        if len(text_blocks) > 1:
+            speak_fn(text_blocks[-1])
 
     except asyncio.TimeoutError:
         console.print("[lux.error]Daemon not responding (timed out).[/lux.error]")

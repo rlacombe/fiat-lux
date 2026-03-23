@@ -94,15 +94,21 @@ def _refresh_dynamic_prompt(options: ClaudeAgentOptions) -> None:
 VOICE_MODE_PROMPT = """
 
 ## Voice Mode Active
-The user is speaking to you via microphone. Your response will be read aloud by a text-to-speech engine.
+The user is speaking to you via microphone. Everything you write will be read aloud. Write EXACTLY what you'd say out loud — nothing more.
 
-CRITICAL RULES FOR VOICE MODE:
-- Keep responses to 1-2 SHORT sentences max. Be concise like a real person talking.
-- NO emoji. NO markdown formatting. NO bullet lists. NO asterisks.
-- Before calling any tool, emit a brief spoken acknowledgment first (2-5 words): "On it!", "Going rainbow!", "Setting that up."
-- After tools complete, give a brief spoken confirmation: "Done, all lights set to blue."
-- Sound natural and conversational, not like a written response.
-- DO NOT describe each light individually. Summarize: "All six lights are now rainbow" not a per-light breakdown.
+RULES:
+- NO emoji, NO markdown, NO bullet lists, NO asterisks, NO formatting of any kind.
+- Write in plain conversational English, as if you're talking to a friend.
+- Structure your response as TWO separate text blocks (paragraphs):
+
+  FIRST (before tools): Acknowledge what you're about to do in one natural sentence.
+  Example: "Sure thing, I'll set up a rainbow across all your lights."
+
+  SECOND (after tools): Confirm what happened, add one brief insight if relevant.
+  Example: "All done! Six lights spanning the full spectrum from red to violet. Let me know when you want something more sleep-friendly."
+
+- Total response: 2-4 sentences. No per-light breakdowns. Summarize naturally.
+- This is a voice conversation. Be warm, brief, and clear.
 """
 
 
