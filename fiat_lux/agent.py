@@ -461,31 +461,32 @@ def _listen_once() -> None:
 
     from fiat_lux.voice import wait_for_speech, stop_speech
 
+    # Install a signal handler that forces clean exit
+    import signal as _signal
+
+    def _force_exit(signum, frame):
+        stop_speech()
+        console.print("\n[lux.dim]Goodbye![/lux.dim]")
+        raise SystemExit(0)
+
+    _signal.signal(_signal.SIGINT, _force_exit)
+
     console.print(
         "[lux.title]Lux[/lux.title] [lux.dim]--[/lux.dim] "
         "[lux.text]voice mode[/lux.text]\n"
         "[lux.dim]Speak naturally. Press Ctrl+C to exit.[/lux.dim]\n"
     )
 
-    try:
-        while True:
-            try:
-                console.print("[lux.highlight]Listening...[/lux.highlight]")
-                text = listen_once()
-                if text:
-                    console.print(f"\n[lux.user]You:[/lux.user] {text}\n")
-                    _send_with_tts(text, speak)
-                    wait_for_speech()
-                    console.print()
-                else:
-                    console.print("[lux.dim]...[/lux.dim]")
-            except KeyboardInterrupt:
-                break
-    except KeyboardInterrupt:
-        pass
-    finally:
-        stop_speech()
-        console.print("\n[lux.dim]Goodbye![/lux.dim]")
+    while True:
+        console.print("[lux.highlight]Listening...[/lux.highlight]")
+        text = listen_once()
+        if text:
+            console.print(f"\n[lux.user]You:[/lux.user] {text}\n")
+            _send_with_tts(text, speak)
+            wait_for_speech()
+            console.print()
+        else:
+            console.print("[lux.dim]...[/lux.dim]")
 
 
 def _voice_interactive() -> None:
