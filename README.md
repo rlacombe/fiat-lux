@@ -4,6 +4,26 @@
 
 Meet **Lux** — a chronobiology-powered lighting agent for Philips Hue. Lux manages your lights for better focus, energy, and sleep, grounded in real photobiology research.
 
+```
+$ lux
+Lux -- your chronobiology-powered lighting assistant
+Type a command, or 'quit' to exit.
+
+You: I'm about to read in bed, set up my lights
+
+Lux: Night stand set to deep amber (2200K) at 40% — everything else off.
+     Near-zero melanopic impact, so your melatonin stays untouched.
+
+You: candle 10m
+
+Lux: Candle mode started on night stand, fading out over 10min.
+
+You: wake me up with a sunrise at 7:30
+
+Lux: Scheduled! Lights will ramp from warm amber to full daylight
+     over 20 minutes starting at 7:30 AM. Sweet dreams.
+```
+
 ## Why?
 
 Most smart lighting is dumb. You get an app with color wheels and timers, but no understanding of *why* light matters. The science is clear: light is the primary signal that sets your circadian clock. The wrong light at the wrong time disrupts sleep, tanks focus, and affects mood. The right light — the right spectrum, intensity, and timing — does the opposite.
