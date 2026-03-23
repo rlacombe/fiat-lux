@@ -451,7 +451,7 @@ def _do_voice_in_repl() -> None:
 
 
 def _listen_once() -> None:
-    """One-shot voice command: record → transcribe → send → speak."""
+    """Voice conversation loop — keeps listening after each response."""
     listen_once, speak = _load_voice_model()
     if listen_once is None:
         return
@@ -459,20 +459,32 @@ def _listen_once() -> None:
     if not _daemon_running():
         _start_daemon()
 
-    console.print("[lux.highlight]Listening...[/lux.highlight] (speak, then pause to send)")
-    try:
-        text = listen_once()
-    except ImportError as e:
-        console.print(f"[lux.error]{e}[/lux.error]")
-        return
-    if text:
-        console.print(f"\n[lux.user]You:[/lux.user] {text}\n")
-        _send_with_tts(text, speak)
-        # Wait for Emma to finish speaking before exiting
-        from fiat_lux.voice import wait_for_speech
-        wait_for_speech()
-    else:
-        console.print("[lux.dim]No speech detected.[/lux.dim]")
+    from fiat_lux.voice import wait_for_speech
+
+    console.print(
+        "[lux.title]Lux[/lux.title] [lux.dim]--[/lux.dim] "
+        "[lux.text]voice mode[/lux.text]\n"
+        "[lux.dim]Speak naturally. Press Ctrl+C to exit.[/lux.dim]\n"
+    )
+
+    while True:
+        try:
+            console.print("[lux.highlight]Listening...[/lux.highlight]")
+            try:
+                text = listen_once()
+            except ImportError as e:
+                console.print(f"[lux.error]{e}[/lux.error]")
+                return
+            if text:
+                console.print(f"\n[lux.user]You:[/lux.user] {text}\n")
+                _send_with_tts(text, speak)
+                wait_for_speech()
+                console.print()
+            else:
+                console.print("[lux.dim]...[/lux.dim]")
+        except KeyboardInterrupt:
+            console.print("\n[lux.dim]Goodbye![/lux.dim]")
+            return
 
 
 def _voice_interactive() -> None:
