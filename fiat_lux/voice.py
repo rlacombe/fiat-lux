@@ -228,8 +228,9 @@ def speak(text: str, voice: str = TTS_VOICE) -> None:
                     tmp = f.name
                 comm = edge_tts.Communicate(clean, voice)
                 await comm.save(tmp)
+                # afplay plays audio directly through speakers, no GUI
                 subprocess.run(
-                    ["open", tmp],
+                    ["afplay", tmp],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
