@@ -24,8 +24,8 @@ VOICE_CONFIG = CONFIG_DIR / "voice.json"
 # Audio settings
 SAMPLE_RATE = 16000  # Whisper expects 16kHz
 CHANNELS = 1  # mono
-SILENCE_THRESHOLD = 0.01  # RMS below this = silence
-SILENCE_DURATION = 1.5  # seconds of silence to auto-stop
+SILENCE_THRESHOLD = 0.03  # RMS below this = silence (tuned for laptop mic)
+SILENCE_DURATION = 2.0  # seconds of silence to auto-stop
 MAX_DURATION = 15  # max recording seconds
 
 # Set by agent.py to enable volume meter display
@@ -166,6 +166,11 @@ def listen_once() -> str | None:
     audio = record_until_silence()
     if audio is None:
         return None
+
+    # Show spinner during transcription
+    if _console is not None:
+        with _console.status("[lux.highlight]Transcribing...", spinner="dots"):
+            return transcribe(audio)
     return transcribe(audio)
 
 
