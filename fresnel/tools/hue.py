@@ -58,6 +58,34 @@ def _find_group_id(b: Bridge, group_name: str) -> int | None:
     return None
 
 
+def get_lights_context() -> str:
+    """Return a summary of available lights for the system prompt.
+
+    Called at startup, not as a tool. Fails silently if bridge isn't configured.
+    """
+    try:
+        b = _get_bridge()
+    except RuntimeError:
+        return ""
+
+    try:
+        lines = ["## Available Lights"]
+        for light in b.lights:
+            lines.append(f"- {light.name} (id={light.light_id})")
+
+        groups = b.get_group()
+        if groups:
+            lines.append("\n## Groups/Rooms")
+            for gid, group in groups.items():
+                lines.append(
+                    f"- {group['name']} (id={gid}): "
+                    f"lights={group.get('lights', [])}"
+                )
+        return "\n".join(lines)
+    except Exception:
+        return ""
+
+
 def _text(text: str) -> dict[str, Any]:
     return {"content": [{"type": "text", "text": text}]}
 
