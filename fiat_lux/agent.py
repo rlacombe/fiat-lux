@@ -385,11 +385,7 @@ def main() -> None:
     elif args[0] == "setup" and len(args) > 1 and args[1] == "weather":
         prompt = "Please set up weather integration. Ask me for permission before using location services."
         _send(prompt)
-    elif args[0] == "listen":
-        _listen_once()
-    elif args[0] in ("--voice", "-V"):
-        _voice_interactive()
-    elif args[0] == "wake":
+    elif args[0] in ("listen", "--voice", "-V", "wake"):
         _wake_mode()
     else:
         prompt = " ".join(args)
@@ -454,80 +450,6 @@ def _do_voice_in_repl() -> None:
         console.print()
     else:
         console.print("[lux.dim]No speech detected.[/lux.dim]\n")
-
-
-def _listen_once() -> None:
-    """Voice conversation loop — keeps listening after each response."""
-    listen_once, speak = _load_voice_model()
-    if listen_once is None:
-        return
-
-    if not _daemon_running():
-        _start_daemon()
-
-    from fiat_lux.voice import wait_for_speech, stop_speech
-
-    # Install a signal handler that forces clean exit
-    import signal as _signal
-
-    def _force_exit(signum, frame):
-        stop_speech()
-        console.print("\n[lux.dim]Goodbye![/lux.dim]")
-        raise SystemExit(0)
-
-    _signal.signal(_signal.SIGINT, _force_exit)
-
-    console.print(
-        "[lux.title]Lux[/lux.title] [lux.dim]--[/lux.dim] "
-        "[lux.text]voice mode[/lux.text]\n"
-        "[lux.dim]Speak naturally. Press Ctrl+C to exit.[/lux.dim]\n"
-    )
-
-    while True:
-        console.print("[lux.highlight]Listening...[/lux.highlight]")
-        text = listen_once()
-        if text:
-            console.print(f"\n[lux.user]You:[/lux.user] {text}\n")
-            _send_with_tts(text, speak)
-            wait_for_speech()
-            console.print()
-        else:
-            console.print("[lux.dim]...[/lux.dim]")
-
-
-def _voice_interactive() -> None:
-    """Voice REPL — continuous listen loop with TTS responses."""
-    result = _load_voice_model()
-    if result[0] is None:
-        return
-    listen_once, speak = result
-
-    if not _daemon_running():
-        _start_daemon()
-
-    console.print(
-        "[lux.title]Lux[/lux.title] [lux.dim]--[/lux.dim] "
-        "[lux.text]voice mode[/lux.text]\n"
-        "[lux.dim]Speak a command. Press Ctrl+C to exit.[/lux.dim]\n"
-    )
-
-    while True:
-        try:
-            console.print("[lux.highlight]Listening...[/lux.highlight]")
-            try:
-                text = listen_once()
-            except ImportError as e:
-                console.print(f"[lux.error]{e}[/lux.error]")
-                break
-            if text:
-                console.print(f"\n[lux.user]You:[/lux.user] {text}\n")
-                _send_with_tts(text, speak)
-                console.print()
-            else:
-                console.print("[lux.dim]...[/lux.dim]")
-        except KeyboardInterrupt:
-            console.print("\n[lux.dim]Goodbye![/lux.dim]")
-            break
 
 
 def _wake_mode() -> None:

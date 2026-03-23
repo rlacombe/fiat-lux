@@ -315,7 +315,12 @@ def stop_speech() -> None:
 # Wake word detection
 # ---------------------------------------------------------------------------
 
-WAKE_PHRASES = {"hey lux", "hey lucks", "hey lucks", "a lux", "hey luck", "haylux", "hey, lux"}
+WAKE_PHRASES = {
+    "hey lux", "hey lucks", "hey luck", "hey lox", "hey locks",
+    "hey docs", "hey docks", "hey vox", "hey box",
+    "hey lax", "hey luxe", "hey luks", "hey luke",
+    "a lux", "haylux", "hey, lux", "he lux", "hey lex",
+}
 WAKE_LISTEN_SECONDS = 2.5  # how long each wake word check records
 
 
