@@ -289,7 +289,10 @@ async def _handle_client(
             prompt = (
                 "[VOICE MODE — this will be read aloud. "
                 "Reply in 1-2 short sentences ONLY. No emoji, no markdown, no bullet lists. "
-                "Be a quick voice assistant.]\n\n" + prompt
+                "Be a quick voice assistant. "
+                "ALWAYS start by stating what you're about to do BEFORE calling any tool. "
+                "Example: 'Setting your lights to cool white for coding.' then call the tools.]\n\n"
+                + prompt
             )
         else:
             _remove_voice_mode(options)
