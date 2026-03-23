@@ -70,7 +70,7 @@ Lux: It's 3:15 PM — Afternoon mode. 6000K at 95% on ceiling and desk.
 - **Circadian automation** — time-based lighting grounded in melanopsin sensitivity and melatonin research
 - **Weather-adaptive** — boosts brightness on cloudy days, shifts circadian curve to actual sunrise/sunset
 - **Scheduling** — "sunrise at 8am tomorrow" — gradual transitions that run while you sleep
-- **Calendar alerts** — breathing pulse on your desk lamp before meetings (amber at T-5min, blue at T-15s)
+- **Calendar alerts** — synchronized light pulses before meetings (slow amber wave at T-5min, fast blue chirp at T-15s)
 - **Persistent daemon** — boots once, stays warm, every command after that is fast
 - **User memory** — Lux learns your name, room layout, sleep habits across sessions
 - **Built-in Hue control** — no external MCP servers needed
