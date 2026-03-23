@@ -262,11 +262,16 @@ def _candle_recover(bridge, light_ids: list[int], breath_bri: int) -> None:
         })
 
 
-async def candle_mode_loop(light_ids: list[int] | None = None) -> None:
+async def candle_mode_loop(
+    light_ids: list[int] | None = None,
+    fade_out_minutes: float = 0,
+) -> None:
     """Run continuous candle mode on lights until cancelled.
 
     Combines breathing (slow underlying swell) with flame-like randomness
     (per-light flicker jitter and periodic wind gusts).
+
+    If fade_out_minutes > 0, gradually dims over that duration then turns off.
     """
     b = _get_bridge()
 
@@ -291,15 +296,29 @@ async def candle_mode_loop(light_ids: list[int] | None = None) -> None:
         cycle = CANDLE_INHALE + CANDLE_EXHALE
         next_gust = asyncio.get_event_loop().time() + random.uniform(*CANDLE_GUST_INTERVAL)
         start_time = asyncio.get_event_loop().time()
+        fade_out_seconds = fade_out_minutes * 60
 
         while True:
             now = asyncio.get_event_loop().time()
+            elapsed = now - start_time
 
-            # Compute breathing baseline: sinusoidal swell
+            # Fade-out: gradually reduce the envelope over time
+            if fade_out_seconds > 0:
+                fade = max(0.0, 1.0 - elapsed / fade_out_seconds)
+                if fade <= 0:
+                    # Time's up — turn off and exit
+                    for lid in light_ids:
+                        b.set_light(lid, {"on": False, "transitiontime": 30})
+                    return
+            else:
+                fade = 1.0
+
+            # Compute breathing baseline: sinusoidal swell, scaled by fade
             phase = ((now - start_time) % cycle) / cycle
-            # Sine wave: 0→1→0 over one cycle
             wave = (math.sin(phase * 2 * math.pi - math.pi / 2) + 1) / 2
-            breath_bri = round(CANDLE_BRI_LOW + wave * (CANDLE_BRI_HIGH - CANDLE_BRI_LOW))
+            bri_low = round(CANDLE_BRI_LOW * fade)
+            bri_high = round(CANDLE_BRI_HIGH * fade)
+            breath_bri = max(1, round(bri_low + wave * (bri_high - bri_low)))
 
             # Check for gust
             if now >= next_gust:

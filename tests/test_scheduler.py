@@ -125,6 +125,7 @@ class TestExecuteTransition:
     def test_sets_start_then_end_state(self, mock_bridge):
         job = {
             "id": "test1",
+            "start_time": datetime.now().isoformat(),
             "lights": ["all"],
             "start_state": {"brightness_pct": 1, "kelvin": 2000},
             "end_state": {"brightness_pct": 100, "kelvin": 5500},
@@ -146,12 +147,14 @@ class TestExecuteTransition:
 
         # Last two: end state (with ramp)
         end_cmd = calls[2][0][1]
-        assert end_cmd["transitiontime"] == 20 * 60 * 10  # 20 min in deciseconds
         assert end_cmd["on"] is True
+        # Transition time should be close to 20 min (might be slightly less due to timing)
+        assert end_cmd["transitiontime"] > 11000
 
     def test_caps_transition_at_bridge_max(self, mock_bridge):
         job = {
             "id": "test2",
+            "start_time": datetime.now().isoformat(),
             "lights": ["Desk lamp"],
             "start_state": {"brightness_pct": 1},
             "end_state": {"brightness_pct": 100},
@@ -165,6 +168,31 @@ class TestExecuteTransition:
         calls = mock_bridge.set_light.call_args_list
         end_cmd = calls[1][0][1]
         assert end_cmd["transitiontime"] == 65535
+
+    def test_catches_up_when_late(self, mock_bridge):
+        """If we're 5 minutes late on a 20-minute transition, jump to 25% and ramp the rest."""
+        start = datetime.now() - timedelta(minutes=5)
+        job = {
+            "id": "test3",
+            "start_time": start.isoformat(),
+            "lights": ["Desk lamp"],
+            "start_state": {"brightness_pct": 0, "kelvin": 2000},
+            "end_state": {"brightness_pct": 100, "kelvin": 5500},
+            "duration_minutes": 20,
+            "description": "Late sunrise",
+        }
+
+        with patch("fiat_lux.scheduler.time.sleep"):
+            _execute_transition(job)
+
+        calls = mock_bridge.set_light.call_args_list
+        # First call: jump to interpolated position (~25%)
+        now_cmd = calls[0][0][1]
+        assert now_cmd["transitiontime"] == 0
+        assert now_cmd["bri"] > 1  # should be partway through
+        # Second call: ramp remaining ~15 minutes
+        end_cmd = calls[1][0][1]
+        assert end_cmd["transitiontime"] < 20 * 60 * 10  # less than full 20 min
 
 
 class TestCleanupPastJobs:

@@ -265,6 +265,9 @@ def main() -> None:
         from fiat_lux.calendar import setup_interactive
 
         setup_interactive()
+    elif args[0] == "setup" and len(args) > 1 and args[1] == "weather":
+        prompt = "Please set up weather integration. Ask me for permission before using location services."
+        _send(prompt)
     else:
         prompt = " ".join(args)
         _send(prompt)

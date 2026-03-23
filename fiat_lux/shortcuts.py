@@ -13,24 +13,44 @@ from fiat_lux.routines import run_routine, list_routines
 BRIGHTNESS_STEP = 20  # percent per brighter/dimmer
 
 # Sentinel values for ambient modes (daemon interprets these)
+# Format: SENTINEL or SENTINEL:light_name or SENTINEL:light_name:fade_minutes
 SHORTCUT_BREATHE_START = "__BREATHE_START__"
 SHORTCUT_BREATHE_STOP = "__BREATHE_STOP__"
 SHORTCUT_CANDLE_START = "__CANDLE_START__"
+
+
+def _parse_duration(text: str) -> tuple[str, float]:
+    """Extract a trailing duration like '10m', '30min', '5 minutes' from text.
+
+    Returns (text_without_duration, minutes). Returns 0 if no duration found.
+    """
+    m = re.search(r'\b(\d+)\s*(?:m|min|mins|minutes?)\s*$', text)
+    if m:
+        return text[:m.start()].strip(), float(m.group(1))
+    return text, 0
 
 
 def try_shortcut(text: str) -> str | None:
     """Try to handle a command directly. Returns response text, or None to fall through to LLM."""
     text = text.strip().lower()
 
-    # --- Ambient modes (optionally targeting specific lights) ---
-    # "candle" / "candle on nightstand" / "candle mode night stand"
-    for prefix in ("candle mode on ", "candle mode ", "candlelight on ", "candle on ", "candle "):
-        if text.startswith(prefix) and text != prefix.strip():
-            light_name = text[len(prefix):].strip()
-            return f"{SHORTCUT_CANDLE_START}:{light_name}"
+    # --- Ambient modes (optionally targeting specific lights and duration) ---
+    # Exact matches first, then parameterized
+    # "candle 10m" / "candle mode 10m" (no light name, just duration)
+    base, fade = _parse_duration(text)
+    if base in ("candle", "candle mode", "candlelight") and fade:
+        return f"{SHORTCUT_CANDLE_START}::{fade}"
 
     if text in ("candle", "candle mode", "candlelight"):
         return SHORTCUT_CANDLE_START
+
+    # "candle on nightstand" / "candle on night stand 10m"
+    for prefix in ("candle mode on ", "candlelight on ", "candle on "):
+        if text.startswith(prefix):
+            rest = text[len(prefix):].strip()
+            rest, fade = _parse_duration(rest)
+            if rest:
+                return f"{SHORTCUT_CANDLE_START}:{rest}:{fade}"
 
     # "breathe" / "breathe on nightstand"
     for prefix in ("breathing mode on ", "breathing mode ", "breathe on ", "breathing on ", "breathe "):

@@ -33,6 +33,8 @@ from fiat_lux.tools.calendar_tools import ALL_CALENDAR_TOOLS
 from fiat_lux.tools.circadian import get_circadian_recommendation
 from fiat_lux.tools.hue import ALL_HUE_TOOLS, get_lights_context
 from fiat_lux.tools.memory import ALL_MEMORY_TOOLS, get_profile_context
+from fiat_lux.tools.weather_tools import ALL_WEATHER_TOOLS
+from fiat_lux.weather import get_weather_context
 from fiat_lux.tools.scheduler_tools import ALL_SCHEDULER_TOOLS
 
 SOCKET_PATH = Path.home() / ".config" / "fiat_lux" / "lux.sock"
@@ -54,23 +56,39 @@ def _build_system_prompt() -> str:
     lights = get_lights_context()
     if lights:
         parts.append(lights)
+    weather = get_weather_context()
+    if weather:
+        parts.append(weather)
     return "\n\n".join(parts)
 
 
-def _refresh_time_in_prompt(options: ClaudeAgentOptions) -> None:
-    """Update the current time in the system prompt without rebuilding everything."""
+def _refresh_dynamic_prompt(options: ClaudeAgentOptions) -> None:
+    """Update time and weather in the system prompt."""
     from datetime import datetime
-
-    new_time = f"## Current Time\n{datetime.now().strftime('%A %Y-%m-%d %H:%M')}"
-    # Replace the time section in the existing prompt
-    prompt = options.system_prompt
     import re
 
-    options.system_prompt = re.sub(
-        r"## Current Time\n.+",
-        new_time,
-        prompt,
-    )
+    prompt = options.system_prompt
+
+    # Refresh time
+    new_time = f"## Current Time\n{datetime.now().strftime('%A %Y-%m-%d %H:%M')}"
+    prompt = re.sub(r"## Current Time\n.+", new_time, prompt)
+
+    # Refresh weather (replace existing section or append)
+    weather = get_weather_context()
+    if "## Current Weather" in prompt:
+        if weather:
+            prompt = re.sub(
+                r"## Current Weather\n(?:- .+\n?)+",
+                weather + "\n",
+                prompt,
+            )
+        else:
+            prompt = re.sub(r"\n\n## Current Weather\n(?:- .+\n?)+", "", prompt)
+    elif weather:
+        # Append weather after the time section
+        prompt = prompt.replace(new_time, f"{new_time}\n\n{weather}")
+
+    options.system_prompt = prompt
 
 
 def _build_options() -> ClaudeAgentOptions:
@@ -81,6 +99,7 @@ def _build_options() -> ClaudeAgentOptions:
         *ALL_ROUTINE_TOOLS,
         *ALL_CALENDAR_TOOLS,
         *ALL_SCHEDULER_TOOLS,
+        *ALL_WEATHER_TOOLS,
     ]
     fiat_lux_tools = create_sdk_mcp_server(
         name="fiat_lux",
@@ -139,12 +158,22 @@ async def _handle_ambient(shortcut_result: str) -> str:
     """Handle ambient mode start/stop signals from shortcuts."""
     global _breathing_task
 
-    # Parse optional light name from sentinel (e.g. "__CANDLE_START__:night stand")
+    # Parse optional light name and fade duration from sentinel
+    # Format: SENTINEL or SENTINEL:light_name or SENTINEL:light_name:fade_minutes
     light_name = ""
+    fade_minutes = 0.0
     if ":" in shortcut_result:
-        shortcut_result, light_name = shortcut_result.split(":", 1)
+        parts = shortcut_result.split(":", 2)
+        shortcut_result = parts[0]
+        light_name = parts[1] if len(parts) > 1 else ""
+        if len(parts) > 2 and parts[2]:
+            try:
+                fade_minutes = float(parts[2])
+            except ValueError:
+                pass
     light_ids = _resolve_light_ids(light_name)
     light_label = f" on {light_name}" if light_name else ""
+    fade_label = f", fading out over {int(fade_minutes)}min" if fade_minutes else ""
 
     if shortcut_result == SHORTCUT_BREATHE_START:
         await _stop_breathing()
@@ -153,8 +182,8 @@ async def _handle_ambient(shortcut_result: str) -> str:
 
     if shortcut_result == SHORTCUT_CANDLE_START:
         await _stop_breathing()
-        _breathing_task = asyncio.create_task(candle_mode_loop(light_ids))
-        return f"Candle mode started{light_label}. Say 'stop' to end."
+        _breathing_task = asyncio.create_task(candle_mode_loop(light_ids, fade_out_minutes=fade_minutes))
+        return f"Candle mode started{light_label}{fade_label}. Say 'stop' to end."
 
     if shortcut_result == SHORTCUT_BREATHE_STOP:
         was_running = await _stop_breathing()
@@ -180,7 +209,7 @@ async def _handle_client(
     """Handle a single CLI connection."""
     try:
         # Refresh the time in the system prompt so it's always current
-        _refresh_time_in_prompt(options)
+        _refresh_dynamic_prompt(options)
 
         data = await reader.readline()
         if not data:

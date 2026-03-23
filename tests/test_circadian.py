@@ -1,8 +1,19 @@
 """Tests for the circadian rhythm engine."""
 
 from datetime import datetime
+from unittest.mock import patch
+
+import pytest
 
 from fiat_lux.tools.circadian import get_circadian_state
+
+
+@pytest.fixture(autouse=True)
+def no_weather():
+    """Disable weather integration so tests use the static circadian curve."""
+    with patch("fiat_lux.weather.get_actual_sunrise_sunset", return_value=None), \
+         patch("fiat_lux.weather.get_brightness_adjustment", return_value=1.0):
+        yield
 
 
 def _at(hour: int, minute: int = 0) -> datetime:

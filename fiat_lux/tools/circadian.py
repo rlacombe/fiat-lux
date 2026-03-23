@@ -37,25 +37,74 @@ def _interpolate(t: float, t0: float, t1: float, v0: float, v1: float) -> float:
     return v0 + (v1 - v0) * ratio
 
 
+def _shift_waypoints(
+    waypoints: list[tuple], actual_sunrise: float, actual_sunset: float
+) -> list[tuple]:
+    """Shift waypoints to align with actual sunrise/sunset times.
+
+    The default curve assumes sunrise at 6:00 and sunset at ~19:00.
+    We shift the morning waypoints (6-9h) to align with actual sunrise,
+    and evening waypoints (17-22h) to align with actual sunset.
+    """
+    default_sunrise = 6.0
+    default_sunset = 19.0
+
+    morning_shift = actual_sunrise - default_sunrise
+    evening_shift = actual_sunset - default_sunset
+
+    shifted = []
+    for hour, kelvin, bri, lights, name in waypoints:
+        if hour <= 9.0:
+            # Morning waypoints shift with sunrise
+            new_hour = hour + morning_shift
+        elif hour >= 17.0:
+            # Evening waypoints shift with sunset
+            new_hour = hour + evening_shift
+        else:
+            # Midday stays fixed
+            new_hour = hour
+        shifted.append((new_hour, kelvin, bri, lights, name))
+    return shifted
+
+
 def get_circadian_state(now: datetime | None = None) -> dict[str, Any]:
     """Compute the ideal lighting state for the given time.
 
     Returns a dict with kelvin, brightness_pct, active_lights, and mode_name.
     Uses linear interpolation between the circadian waypoints.
+    If weather data is available, shifts waypoints to actual sunrise/sunset
+    and boosts brightness for cloud cover.
     """
     if now is None:
         now = datetime.now()
 
     hour = now.hour + now.minute / 60.0
 
-    # Find surrounding waypoints
-    prev = CIRCADIAN_WAYPOINTS[-1]
-    next_wp = CIRCADIAN_WAYPOINTS[0]
+    # Use weather data to adjust waypoints if available
+    waypoints = CIRCADIAN_WAYPOINTS
+    brightness_multiplier = 1.0
+    weather_note = ""
 
-    for i, wp in enumerate(CIRCADIAN_WAYPOINTS):
+    try:
+        from fiat_lux.weather import get_actual_sunrise_sunset, get_brightness_adjustment
+
+        sun_times = get_actual_sunrise_sunset()
+        if sun_times:
+            waypoints = _shift_waypoints(waypoints, sun_times[0], sun_times[1])
+            weather_note = f" (sunrise {sun_times[0]:.1f}h, sunset {sun_times[1]:.1f}h)"
+
+        brightness_multiplier = get_brightness_adjustment()
+    except ImportError:
+        pass
+
+    # Find surrounding waypoints
+    prev = waypoints[-1]
+    next_wp = waypoints[0]
+
+    for i, wp in enumerate(waypoints):
         if wp[0] <= hour:
             prev = wp
-            next_wp = CIRCADIAN_WAYPOINTS[(i + 1) % len(CIRCADIAN_WAYPOINTS)]
+            next_wp = waypoints[(i + 1) % len(waypoints)]
         else:
             next_wp = wp
             break
@@ -70,6 +119,9 @@ def get_circadian_state(now: datetime | None = None) -> dict[str, Any]:
 
     kelvin = round(_interpolate(hour, t0, t1, prev[1], next_wp[1]))
     brightness = round(_interpolate(hour, t0, t1, prev[2], next_wp[2]))
+
+    # Apply weather brightness boost (capped at 100%)
+    brightness = min(100, round(brightness * brightness_multiplier))
 
     return {
         "kelvin": kelvin,
