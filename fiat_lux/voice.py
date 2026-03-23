@@ -298,6 +298,70 @@ def stop_speech() -> None:
 # Volume meter for recording feedback
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Wake word detection
+# ---------------------------------------------------------------------------
+
+WAKE_PHRASES = {"hey lux", "hey lucks", "hey lucks", "a lux", "hey luck", "haylux", "hey, lux"}
+WAKE_LISTEN_SECONDS = 2.5  # how long each wake word check records
+
+
+def detect_wake_word() -> bool:
+    """Record a short clip and check if it contains 'Hey Lux'.
+
+    Returns True if wake word detected, False otherwise.
+    Designed to be called in a tight loop for always-on listening.
+    """
+    import numpy as np
+    import sounddevice as sd
+    import queue
+
+    audio_queue: queue.Queue = queue.Queue()
+
+    def _callback(indata, frames, time_info, status):
+        audio_queue.put(indata.copy())
+
+    chunks = []
+    try:
+        with sd.InputStream(
+            samplerate=SAMPLE_RATE,
+            channels=CHANNELS,
+            dtype="float32",
+            blocksize=int(SAMPLE_RATE * 0.1),
+            callback=_callback,
+        ):
+            import time as _time
+            deadline = _time.monotonic() + WAKE_LISTEN_SECONDS
+            while _time.monotonic() < deadline:
+                try:
+                    audio = audio_queue.get(timeout=0.15)
+                    chunks.append(audio)
+                except queue.Empty:
+                    continue
+    except KeyboardInterrupt:
+        raise
+
+    if not chunks:
+        return False
+
+    audio = np.concatenate(chunks).flatten()
+
+    # Only transcribe if there's some audio energy (skip pure silence)
+    if _rms(audio) < 0.005:
+        return False
+
+    # Quick transcribe — check for wake word
+    model = _get_whisper_model()
+    result = model.transcribe(audio, language="en", fp16=False)
+    text = result["text"].strip().lower()
+
+    # Check for wake word variants
+    for phrase in WAKE_PHRASES:
+        if phrase in text:
+            return True
+    return False
+
+
 def format_volume_bar(rms_level: float, width: int = 20) -> str:
     """Format a volume level as a visual bar. Returns a string like '|||||     '."""
     filled = min(width, int(rms_level * width * 10))  # scale up for visibility

@@ -389,6 +389,8 @@ def main() -> None:
         _listen_once()
     elif args[0] in ("--voice", "-V"):
         _voice_interactive()
+    elif args[0] == "wake":
+        _wake_mode()
     else:
         prompt = " ".join(args)
         _send(prompt)
@@ -526,6 +528,63 @@ def _voice_interactive() -> None:
         except KeyboardInterrupt:
             console.print("\n[lux.dim]Goodbye![/lux.dim]")
             break
+
+
+def _wake_mode() -> None:
+    """Always-on wake word mode — listens for 'Hey Lux' then takes a command."""
+    try:
+        from fiat_lux.voice import (
+            detect_wake_word,
+            ensure_model,
+            listen_once,
+            speak,
+            wait_for_speech,
+            stop_speech,
+        )
+        import fiat_lux.voice as voice_mod
+        voice_mod._console = console
+    except ImportError:
+        console.print(
+            "[lux.error]Voice deps not installed.[/lux.error] "
+            "[lux.dim]Run: uv sync --extra voice[/lux.dim]"
+        )
+        return
+
+    with console.status("[lux.highlight]Loading voice model...", spinner="dots"):
+        ensure_model()
+
+    if not _daemon_running():
+        _start_daemon()
+
+    import signal as _signal
+
+    def _force_exit(signum, frame):
+        stop_speech()
+        console.print("\n[lux.dim]Goodbye![/lux.dim]")
+        raise SystemExit(0)
+
+    _signal.signal(_signal.SIGINT, _force_exit)
+
+    console.print(
+        "[lux.title]Lux[/lux.title] [lux.dim]--[/lux.dim] "
+        "[lux.text]wake word mode[/lux.text]\n"
+        '[lux.dim]Say "Hey Lux" to start. Press Ctrl+C to exit.[/lux.dim]\n'
+    )
+
+    while True:
+        console.print("[lux.dim]Waiting for 'Hey Lux'...[/lux.dim]", end="\r")
+        if detect_wake_word():
+            # Play a short chime-like ack so user knows Lux heard them
+            speak("Yes?")
+            wait_for_speech()
+
+            console.print("[lux.highlight]Listening...[/lux.highlight]")
+            text = listen_once()
+            if text:
+                console.print(f"\n[lux.user]You:[/lux.user] {text}\n")
+                _send_with_tts(text, speak)
+                wait_for_speech()
+                console.print()
 
 
 if __name__ == "__main__":
