@@ -229,14 +229,16 @@ def _send_with_tts(prompt: str, speak_fn) -> None:
 
 
 async def _send_to_daemon_tts(prompt: str, speak_fn) -> None:
-    """Send prompt, display response, and speak each text block as it arrives."""
+    """Send prompt in voice mode. Speak first text block, display the rest."""
     reader, writer = await asyncio.open_unix_connection(str(SOCKET_PATH))
 
     try:
-        writer.write(json.dumps({"prompt": prompt}).encode() + b"\n")
+        # Send with voice flag so daemon adjusts Claude's behavior
+        writer.write(json.dumps({"prompt": prompt, "voice": True}).encode() + b"\n")
         await writer.drain()
 
         first_text = True
+        spoken = False
         while True:
             line = await asyncio.wait_for(reader.readline(), timeout=SEND_TIMEOUT)
             if not line:
@@ -250,8 +252,10 @@ async def _send_to_daemon_tts(prompt: str, speak_fn) -> None:
                     console.print("[lux.label]Lux:[/lux.label]")
                     first_text = False
                 console.print(Markdown(msg["text"]), style="lux.text")
-                # Speak immediately — runs in background thread
-                speak_fn(msg["text"])
+                # Only speak the first text block (the short ack/summary)
+                if not spoken:
+                    speak_fn(msg["text"])
+                    spoken = True
             elif msg["type"] == "tool":
                 console.print(f"[lux.tool]  -> {msg['name']}[/lux.tool]")
             elif msg["type"] == "error":

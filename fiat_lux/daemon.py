@@ -91,6 +91,32 @@ def _refresh_dynamic_prompt(options: ClaudeAgentOptions) -> None:
     options.system_prompt = prompt
 
 
+VOICE_MODE_PROMPT = """
+
+## Voice Mode Active
+The user is speaking to you via microphone. Your response will be read aloud by a text-to-speech engine.
+
+CRITICAL RULES FOR VOICE MODE:
+- Keep responses to 1-2 SHORT sentences max. Be concise like a real person talking.
+- NO emoji. NO markdown formatting. NO bullet lists. NO asterisks.
+- Before calling any tool, emit a brief spoken acknowledgment first (2-5 words): "On it!", "Going rainbow!", "Setting that up."
+- After tools complete, give a brief spoken confirmation: "Done, all lights set to blue."
+- Sound natural and conversational, not like a written response.
+- DO NOT describe each light individually. Summarize: "All six lights are now rainbow" not a per-light breakdown.
+"""
+
+
+def _inject_voice_mode(options: ClaudeAgentOptions) -> None:
+    """Add voice mode instructions to the system prompt."""
+    if VOICE_MODE_PROMPT not in options.system_prompt:
+        options.system_prompt += VOICE_MODE_PROMPT
+
+
+def _remove_voice_mode(options: ClaudeAgentOptions) -> None:
+    """Remove voice mode instructions from the system prompt."""
+    options.system_prompt = options.system_prompt.replace(VOICE_MODE_PROMPT, "")
+
+
 def _build_options() -> ClaudeAgentOptions:
     all_sdk_tools = [
         get_circadian_recommendation,
@@ -218,6 +244,7 @@ async def _handle_client(
 
         request = json.loads(data.decode())
         prompt = request.get("prompt", "")
+        voice_mode = request.get("voice", False)
 
         if not prompt:
             writer.write(json.dumps({"type": "done"}).encode() + b"\n")
@@ -239,6 +266,12 @@ async def _handle_client(
 
         # Any non-shortcut command stops breathing mode
         await _stop_breathing()
+
+        # Inject voice mode instructions if needed
+        if voice_mode:
+            _inject_voice_mode(options)
+        else:
+            _remove_voice_mode(options)
 
         # Tier 2: Claude via persistent ClaudeSDKClient
         await client.query(prompt)
