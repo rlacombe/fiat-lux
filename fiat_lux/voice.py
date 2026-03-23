@@ -26,7 +26,7 @@ SAMPLE_RATE = 16000  # Whisper expects 16kHz
 CHANNELS = 1  # mono
 SILENCE_THRESHOLD = 0.03  # RMS below this = silence (tuned for laptop mic)
 SILENCE_DURATION = 2.0  # seconds of silence to auto-stop
-MAX_DURATION = 15  # max recording seconds
+MAX_DURATION = 120  # max recording seconds (silence detection is the real stop)
 
 # Set by agent.py to enable volume meter display
 _console = None
