@@ -2,7 +2,15 @@
 
 A chronobiology-powered lighting framework for Philips Hue. Meet **Lux**, your lighting scientist.
 
-Fresnel is the framework. **Lux** is the agent — a circadian lighting specialist who manages your Philips Hue lights for better focus, energy, and sleep, grounded in real photobiology research. Named after the unit of illuminance (lux) and built on a framework named after [Augustin-Jean Fresnel](https://en.wikipedia.org/wiki/Augustin-Jean_Fresnel), who revolutionized optics.
+Fresnel is the framework. **Lux** is the agent — a circadian lighting specialist who manages your Philips Hue lights for better focus, energy, and sleep, grounded in real photobiology research.
+
+## Why Fresnel?
+
+[Augustin-Jean Fresnel](https://en.wikipedia.org/wiki/Augustin-Jean_Fresnel) (1788–1827) transformed our understanding of light and saved countless lives in the process. Against fierce opposition from the particle theory establishment, he championed the wave theory of light — developing the mathematics of diffraction and interference that proved light behaves as a wave. His work on birefringence and polarization gave us tools to understand how light interacts with matter at a fundamental level.
+
+But Fresnel's most tangible legacy is the **Fresnel lens**: a brilliant optical design that made lighthouse beams visible from over 30 kilometers away. Before his invention, shipwrecks from poor coastal visibility were routine. The Fresnel lens turned dim lighthouse flames into life-saving beacons and remains in use nearly two centuries later.
+
+This framework carries his name because it shares his mission: **using the physics of light to make a practical difference in people's lives** — whether that's guiding ships safely home or tuning your bedroom lights to protect your sleep.
 
 ## Features
 
