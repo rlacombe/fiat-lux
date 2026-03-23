@@ -30,8 +30,9 @@ class TestRecordUntilSilence:
     @patch("sounddevice.InputStream")
     def test_detects_speech_then_silence(self, mock_input_stream):
         """Should stop recording after speech followed by silence."""
+        ambient = np.full((1600, 1), 0.001, dtype=np.float32)
         speech = np.full((1600, 1), 0.1, dtype=np.float32)
-        silence = np.zeros((1600, 1), dtype=np.float32)
+        silence = np.full((1600, 1), 0.001, dtype=np.float32)
 
         call_count = 0
         stream = MagicMock()
@@ -40,8 +41,10 @@ class TestRecordUntilSilence:
             nonlocal call_count
             call_count += 1
             if call_count <= 5:
-                return speech, None
-            return silence, None
+                return ambient, None  # calibration phase
+            if call_count <= 15:
+                return speech, None  # speaking
+            return silence, None  # silence after speech
 
         stream.read = read_side_effect
         stream.__enter__ = lambda s: s
@@ -55,7 +58,7 @@ class TestRecordUntilSilence:
     @patch("sounddevice.InputStream")
     def test_returns_none_on_pure_silence(self, mock_input_stream):
         """Should return None if no speech detected at all."""
-        silence = np.zeros((1600, 1), dtype=np.float32)
+        silence = np.full((1600, 1), 0.001, dtype=np.float32)
 
         stream = MagicMock()
         stream.read = lambda n: (silence, None)

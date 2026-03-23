@@ -24,9 +24,10 @@ VOICE_CONFIG = CONFIG_DIR / "voice.json"
 # Audio settings
 SAMPLE_RATE = 16000  # Whisper expects 16kHz
 CHANNELS = 1  # mono
-SILENCE_THRESHOLD = 0.03  # RMS below this = silence (tuned for laptop mic)
-SILENCE_DURATION = 2.0  # seconds of silence to auto-stop
+SILENCE_DURATION = 2.0  # seconds of silence after speech to auto-stop
 MAX_DURATION = 120  # max recording seconds (silence detection is the real stop)
+CALIBRATION_SECONDS = 0.5  # measure ambient noise before listening
+THRESHOLD_MULTIPLIER = 3.0  # speech must be Nx louder than ambient
 
 # Set by agent.py to enable volume meter display
 _console = None
@@ -66,10 +67,10 @@ def _rms(audio: np.ndarray) -> float:
 def record_until_silence(
     max_seconds: float = MAX_DURATION,
     silence_seconds: float = SILENCE_DURATION,
-    threshold: float = SILENCE_THRESHOLD,
 ) -> np.ndarray | None:
     """Record from microphone until silence is detected.
 
+    Auto-calibrates the noise threshold from the first 0.5s of ambient audio.
     Returns a numpy array of float32 audio at 16kHz, or None if no speech detected.
     """
     import numpy as np
@@ -91,6 +92,19 @@ def record_until_silence(
 
     try:
         with sd.InputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, dtype="float32") as stream:
+            # Calibrate: measure ambient noise for 0.5s
+            cal_chunks = int(CALIBRATION_SECONDS / 0.1)
+            ambient_levels = []
+            for _ in range(cal_chunks):
+                audio, _ = stream.read(chunk_size)
+                ambient_levels.append(_rms(audio))
+                if live_ctx:
+                    live_ctx.update(Text("  calibrating..."))
+
+            ambient_rms = max(ambient_levels) if ambient_levels else 0.005
+            threshold = ambient_rms * THRESHOLD_MULTIPLIER
+
+            # Record until silence after speech
             for _ in range(max_chunks):
                 audio, _ = stream.read(chunk_size)
                 chunks.append(audio.copy())
@@ -100,7 +114,12 @@ def record_until_silence(
                 # Update volume meter
                 if live_ctx is not None:
                     bar = format_volume_bar(level)
-                    status = "recording" if has_speech else "waiting"
+                    if has_speech:
+                        status = "recording"
+                    elif level > threshold:
+                        status = "hearing you"
+                    else:
+                        status = "waiting"
                     live_ctx.update(Text(f"  {bar} {status}"))
 
                 if level > threshold:
@@ -111,6 +130,9 @@ def record_until_silence(
 
                 if has_speech and silence_chunks >= silence_limit:
                     break
+    except KeyboardInterrupt:
+        # Ctrl+C during recording — return what we have or None
+        pass
     finally:
         if live_ctx:
             live_ctx.stop()
@@ -163,7 +185,11 @@ def listen_once() -> str | None:
             "Voice dependencies not installed. Run: uv sync --extra voice"
         )
 
-    audio = record_until_silence()
+    try:
+        audio = record_until_silence()
+    except KeyboardInterrupt:
+        return None
+
     if audio is None:
         return None
 
