@@ -1,4 +1,4 @@
-# Hey Lux
+# Hey Lux!
 
 **Voice-controlled smart lighting powered by circadian science and Claude**
 
