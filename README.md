@@ -216,7 +216,8 @@ See **[MCP_SERVER.md](MCP_SERVER.md)** for the full tool reference (19 tools) an
 
 ## Disclaimer
 
-Lux's circadian lighting recommendations are based on published photobiology and chronobiology research, but **Lux is not a medical device and does not provide medical advice**. Light exposure can affect circadian rhythms, sleep, and mood — if you have concerns about sleep disorders, seasonal affective disorder, or other health conditions, please consult a qualified healthcare professional. Lux is a tool for wellness and convenience, not a substitute for medical guidance.
+> [!WARNING]
+> Lux's circadian lighting recommendations are based on published photobiology and chronobiology research, but **Lux is not a medical device and does not provide medical advice**. Light exposure can affect circadian rhythms, sleep, and mood — if you have concerns about sleep disorders, seasonal affective disorder, or other health conditions, please consult a qualified healthcare professional. Lux is a tool for wellness and convenience, not a substitute for medical guidance.
 
 ## License
 
