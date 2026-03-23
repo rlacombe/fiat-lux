@@ -4,6 +4,59 @@
 
 Meet **Lux** — a chronobiology-powered lighting agent for Philips Hue. Lux manages your lights for better focus, energy, and sleep, grounded in real photobiology research.
 
+## Why?
+
+Most smart lighting is dumb. You get an app with color wheels and timers, but no understanding of *why* light matters. The science is clear: light is the primary signal that sets your circadian clock. The wrong light at the wrong time disrupts sleep, tanks focus, and affects mood. The right light — the right spectrum, intensity, and timing — does the opposite.
+
+Lux brings that science into your room. It knows about melanopsin sensitivity, cortisol awakening response, melatonin suppression curves, and dim-light melatonin onset. It tracks actual sunrise and sunset for your location, adjusts for cloud cover, and shifts its recommendations with the seasons. And because it's powered by Claude, you can just *talk* to it — no manual programming, no fiddling with color pickers.
+
+## What can Lux do?
+
+Here are some real conversations:
+
+```
+You: wake me up with a sunrise tomorrow at 7:30
+
+Lux: Scheduled! Starting at 7:30 AM, your lights will ramp from 1% warm amber
+     (2000K) to 100% daylight (5500K) over 20 minutes. The Hue bridge handles
+     the smooth fade — it'll run even if your laptop is asleep.
+```
+
+```
+You: it's overcast today, my room feels dark
+
+Lux: I can see that — 73% cloud cover right now. I've already boosted your
+     circadian brightness 22% to compensate. Want me to push it higher?
+```
+
+```
+You: candle on night stand 10m
+
+Lux: Candle mode started on night stand, fading out over 10min.
+```
+
+```
+You: I'm reading in bed, can you set the light so it doesn't mess with my sleep?
+
+Lux: Night stand set to deep amber (2200K) at 40%. At this color temperature,
+     melanopic content is near zero — your melatonin production stays untouched.
+```
+
+```
+You: create a "movie" routine — just the lantern at 10%, deep red
+
+Lux: Saved routine 'movie'. Trigger it anytime by typing 'movie'.
+```
+
+```
+You: what should my lights be right now?
+
+Lux: It's 3:15 PM — Afternoon mode. 6000K at 95% on ceiling and desk.
+     This maintains the cortisol plateau and supports cognitive performance
+     through the natural post-lunch dip. Sunset today is at 7:06 PM,
+     so wind-down starts around 5:00.
+```
+
 ## Features
 
 - **Instant commands** — "lights off", "bedtime", "focus", "brighter" execute directly (<1s)
@@ -139,6 +192,10 @@ Lux stores everything in `~/.config/fiat_lux/`:
 - [uv](https://docs.astral.sh/uv/)
 - A Philips Hue Bridge + Hue bulbs
 - Claude Code subscription (Pro or Max plan)
+
+## Disclaimer
+
+Lux's circadian lighting recommendations are based on published photobiology and chronobiology research, but **Lux is not a medical device and does not provide medical advice**. Light exposure can affect circadian rhythms, sleep, and mood — if you have concerns about sleep disorders, seasonal affective disorder, or other health conditions, please consult a qualified healthcare professional. Lux is a tool for wellness and convenience, not a substitute for medical guidance.
 
 ## License
 
