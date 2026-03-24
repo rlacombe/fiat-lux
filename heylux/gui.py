@@ -204,12 +204,14 @@ class HeyLuxApp(rumps.App):
 
     def _voice_loop(self):
         """Background thread: wake word detection → command → execute → repeat."""
-        # Load voice model (one-time, ~140MB download on first run)
+        # Pre-load voice model and daemon at startup so first command is fast
         try:
             self._set_status(ICON_PROCESSING)
+            _notify("Hey Lux", "Loading voice model...")
             _load_voice()
             _ensure_daemon()
             self._set_status(ICON_IDLE)
+            _notify("Hey Lux", "Ready! Say 'Hey Lux' to start.")
         except Exception as e:
             _notify("Hey Lux", f"Voice init failed: {e}")
             self._set_status(ICON_IDLE)
