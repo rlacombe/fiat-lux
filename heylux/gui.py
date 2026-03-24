@@ -128,7 +128,6 @@ def _send_to_daemon(prompt: str) -> str:
         await writer.drain()
 
         text_blocks = []
-        spoken_first = False
         while True:
             line = await asyncio.wait_for(reader.readline(), timeout=120)
             if not line:
@@ -136,22 +135,16 @@ def _send_to_daemon(prompt: str) -> str:
             msg = json.loads(line.decode())
             if msg["type"] == "text":
                 text_blocks.append(msg["text"])
-                # Speak the first block immediately (the ack)
-                if not spoken_first:
-                    log.info(f"Speaking ack: {msg['text'][:60]}")
-                    _speak(msg["text"])
-                    spoken_first = True
+                # Speak each block as it arrives
+                log.info(f"Speaking: {msg['text'][:60]}")
+                _speak(msg["text"])
             elif msg["type"] == "done":
                 break
 
         writer.close()
         await writer.wait_closed()
 
-        # Return the last block (confirmation) for the caller to speak
-        # First block was already spoken
-        if len(text_blocks) > 1:
-            return text_blocks[-1]
-        return ""
+        return " ".join(text_blocks)
 
     return asyncio.run(_send())
 
@@ -282,11 +275,9 @@ class HeyLuxApp(rumps.App):
                     _wait_for_speech()
                     continue
 
-                # Speak the response
+                # Wait for TTS to finish (response was already spoken during streaming)
                 if response:
                     self._set_status(ICON_SPEAKING)
-                    log.info("Speaking response...")
-                    _speak(response)
                     _wait_for_speech()
                     log.info("Done speaking")
 
