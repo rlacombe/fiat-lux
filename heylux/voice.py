@@ -345,6 +345,10 @@ def listen_for_wake_command() -> str | None:
 
     text_lower = text.lower().strip()
 
+    # Log what Whisper heard for debugging
+    import logging
+    logging.getLogger("heylux.gui").info(f"Whisper heard: '{text_lower}'")
+
     # Check if it starts with a wake phrase
     for phrase in WAKE_PHRASES:
         if text_lower.startswith(phrase):
