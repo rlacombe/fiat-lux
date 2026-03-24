@@ -220,8 +220,11 @@ class HeyLuxApp(rumps.App):
         pass  # non-interactive status item
 
     def _set_status(self, icon: str):
-        """Update the menubar icon."""
-        self.title = icon
+        """Update the menubar icon on the main thread."""
+        import AppKit
+        def _update():
+            self.title = icon
+        AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(_update)
 
     def _voice_loop(self):
         """Background thread: wake word detection → command → execute → repeat."""
