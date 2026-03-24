@@ -9,6 +9,7 @@ Run: lux-app
 """
 
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -17,6 +18,16 @@ import time
 from pathlib import Path
 
 import rumps
+
+# Log to file so we can debug
+CONFIG_DIR_EARLY = Path.home() / ".config" / "heylux"
+CONFIG_DIR_EARLY.mkdir(parents=True, exist_ok=True)
+logging.basicConfig(
+    filename=str(CONFIG_DIR_EARLY / "gui.log"),
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+)
+log = logging.getLogger("heylux.gui")
 
 # Lazy imports for voice — only loaded when needed
 _voice_loaded = False
@@ -207,22 +218,29 @@ class HeyLuxApp(rumps.App):
         # Pre-load voice model and daemon at startup so first command is fast
         try:
             self._set_status(ICON_PROCESSING)
+            log.info("Loading voice model...")
             _notify("Hey Lux", "Loading voice model...")
             _load_voice()
+            log.info("Voice model loaded")
             _ensure_daemon()
+            log.info("Daemon ready")
             self._set_status(ICON_IDLE)
             _notify("Hey Lux", "Ready! Say 'Hey Lux' to start.")
         except Exception as e:
+            log.error(f"Voice init failed: {e}", exc_info=True)
             _notify("Hey Lux", f"Voice init failed: {e}")
             self._set_status(ICON_IDLE)
             return
 
+        log.info("Entering wake word loop")
         while self._running:
             try:
                 self._set_status(ICON_IDLE)
+                log.info("Waiting for wake word...")
 
                 # Listen for wake word + command
                 command = _listen_for_wake()
+                log.info(f"Wake result: {command!r}")
 
                 if command is None:
                     continue
@@ -233,16 +251,20 @@ class HeyLuxApp(rumps.App):
                     _speak("Listening.")
                     _wait_for_speech()
                     text = _listen_for_command()
+                    log.info(f"Follow-up command: {text!r}")
                     if not text:
                         continue
                     command = text
 
                 # Execute the command
+                log.info(f"Executing: {command}")
                 self._set_status(ICON_PROCESSING)
 
                 try:
                     response = _send_to_daemon(command)
-                except Exception:
+                    log.info(f"Response: {response[:100] if response else 'empty'}...")
+                except Exception as e:
+                    log.error(f"Daemon error: {e}", exc_info=True)
                     _speak("Sorry, I couldn't connect to the daemon.")
                     _wait_for_speech()
                     continue
@@ -257,6 +279,7 @@ class HeyLuxApp(rumps.App):
                 while self._running:
                     self._set_status(ICON_LISTENING)
                     follow_up = _listen_for_command()
+                    log.info(f"Multi-turn: {follow_up!r}")
                     if follow_up:
                         self._set_status(ICON_PROCESSING)
                         try:
@@ -269,10 +292,11 @@ class HeyLuxApp(rumps.App):
                             _wait_for_speech()
                     else:
                         # Silence — back to wake word mode
+                        log.info("Silence — returning to wake word mode")
                         break
 
             except Exception as e:
-                # Don't crash the loop
+                log.error(f"Voice loop error: {e}", exc_info=True)
                 time.sleep(1)
 
     def start_voice_loop(self):
