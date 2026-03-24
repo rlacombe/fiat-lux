@@ -388,6 +388,15 @@ def main() -> None:
     elif args[0] in ("listen", "--voice", "-V", "wake"):
         _wake_mode()
     else:
+        # Check for common typos of daemon commands
+        daemon_cmds = {"start", "stop", "status", "restart", "listen", "wake"}
+        if args[0] not in daemon_cmds and len(args) == 1:
+            from difflib import get_close_matches
+            match = get_close_matches(args[0], daemon_cmds, n=1, cutoff=0.6)
+            if match:
+                console.print(f"[lux.dim]Did you mean: lux {match[0]}?[/lux.dim]")
+                return
+
         prompt = " ".join(args)
         _send(prompt)
 
