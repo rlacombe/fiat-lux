@@ -17,6 +17,12 @@ voice = [
     "openai-whisper",
     "sounddevice",
 ]
+gui = [
+    "openai-whisper",
+    "sounddevice",
+    "rumps>=0.4.0",
+    "pyobjc-framework-Cocoa>=12.1",
+]
 
 [tool.uv]
 package = true
@@ -37,3 +43,4 @@ packages = ["heylux"]
 [project.scripts]
 lux = "heylux.agent:main"
 lux-daemon = "heylux.daemon:main"
+lux-app = "heylux.gui:main"
