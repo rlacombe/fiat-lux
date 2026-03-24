@@ -27,7 +27,8 @@ CHANNELS = 1  # mono
 SILENCE_DURATION = 2.0  # seconds of silence after speech to auto-stop
 MAX_DURATION = 120  # max recording seconds (silence detection is the real stop)
 CALIBRATION_SECONDS = 0.5  # measure ambient noise before listening
-THRESHOLD_MULTIPLIER = 3.0  # speech must be Nx louder than ambient
+THRESHOLD_MULTIPLIER = 2.0  # speech must be Nx louder than ambient (lowered for sensitivity)
+MIN_RECORD_SECONDS = 1.0  # always record at least this long before checking silence
 
 # Set by agent.py to enable volume meter display
 _console = None
@@ -120,6 +121,7 @@ def record_until_silence(
 
             # Record until silence after speech
             deadline = _time.monotonic() + max_seconds
+            min_end = _time.monotonic() + MIN_RECORD_SECONDS
             while _time.monotonic() < deadline:
                 try:
                     audio = audio_queue.get(timeout=0.15)
@@ -144,7 +146,7 @@ def record_until_silence(
                 else:
                     silence_chunks += 1
 
-                if has_speech and silence_chunks >= silence_limit:
+                if has_speech and silence_chunks >= silence_limit and _time.monotonic() > min_end:
                     break
     except KeyboardInterrupt:
         pass
