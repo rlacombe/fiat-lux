@@ -326,68 +326,81 @@ def _ensure_tts():
     _get_tts_model()
 
 
-def speak(text: str) -> None:
-    """Speak text aloud. Non-blocking.
-
-    Uses Kokoro (local, fast) if available, falls back to Edge TTS (cloud),
-    then macOS `say`. Each call cancels any in-flight speech using an epoch
-    counter to prevent overlapping audio.
-    """
-    import threading
-    global _speak_epoch
-
+def _clean_for_tts(text: str) -> str:
+    """Strip markdown and emoji from text for TTS."""
     import re as _re
-    # Strip markdown formatting that sounds weird spoken
     clean = text.replace("**", "").replace("*", "").replace("`", "")
-    # Strip emoji — they get spoken as words like "green heart" by TTS
     clean = _re.sub(
         r'[\U0001F300-\U0001F9FF\U00002600-\U000027BF\U0000FE00-\U0000FEFF\U0001FA00-\U0001FAFF]+',
         '', clean
     ).strip()
-    if not clean:
-        return
-    # Limit length
     if len(clean) > 500:
         clean = clean[:500] + "..."
+    return clean
 
-    # Bump epoch so any in-flight speech thread knows to bail out
-    _speak_epoch += 1
-    my_epoch = _speak_epoch
 
-    # Kill any currently playing audio
-    _stop_current_speech()
+def speak(text: str) -> None:
+    """Speak text aloud. Non-blocking.
 
-    def _speak():
-        if _speak_epoch != my_epoch:
-            return
+    Queues text onto a background speech thread. Multiple calls are spoken
+    in order — new text waits for previous speech to finish (no cancellation).
+    Use stop_speech() to cancel everything.
+    """
+    clean = _clean_for_tts(text)
+    if not clean:
+        return
+    _speech_queue.put(clean)
+    _ensure_speech_worker()
 
-        # Try Kokoro first (local, subprocess-isolated)
-        if _tts_backend == "kokoro":
-            try:
-                _speak_kokoro(clean, my_epoch)
-                return
-            except Exception as e:
-                log.warning(f"Kokoro TTS failed: {e}")
 
-        # Fallback: Edge TTS (cloud)
+def _ensure_speech_worker():
+    """Start the background speech worker if not already running."""
+    import threading
+    global _speech_worker
+    if _speech_worker is not None and _speech_worker.is_alive():
+        return
+    _speech_worker = threading.Thread(target=_speech_worker_loop, daemon=True)
+    _speech_worker.start()
+
+
+def _speech_worker_loop():
+    """Background thread: drain the speech queue, speak each item in order."""
+    import queue
+    while True:
         try:
-            _speak_edge_tts(clean, my_epoch)
+            text = _speech_queue.get(timeout=5)
+        except queue.Empty:
+            return  # idle for 5s — exit thread (will restart on next speak())
+        try:
+            _speak_one(text)
+        except Exception as e:
+            log.warning(f"TTS failed: {e}")
+        finally:
+            _speech_queue.task_done()
+
+
+def _speak_one(text: str) -> None:
+    """Speak a single piece of text synchronously (blocks until audio finishes)."""
+    # Try Kokoro first (local, subprocess-isolated)
+    if _tts_backend == "kokoro":
+        try:
+            _speak_kokoro(text, 0)
             return
         except Exception as e:
-            log.warning(f"Edge TTS failed: {e}")
+            log.warning(f"Kokoro TTS failed: {e}")
 
-        # Last resort: macOS say
-        if _speak_epoch != my_epoch:
-            return
-        _speak_say(clean)
+    # Fallback: Edge TTS (cloud)
+    try:
+        _speak_edge_tts(text, 0)
+        return
+    except Exception as e:
+        log.warning(f"Edge TTS failed: {e}")
 
-    # Run in background thread so it doesn't block the UI
-    t = threading.Thread(target=_speak, daemon=True)
-    t.start()
-    _speak_threads.append(t)
+    # Last resort: macOS say
+    _speak_say(text)
 
 
-def _speak_kokoro(text: str, epoch: int) -> None:
+def _speak_kokoro(text: str, _epoch: int = 0) -> None:
     """Generate and play speech using Kokoro TTS in a subprocess.
 
     Runs in a separate process to isolate Metal GPU operations from the
@@ -399,7 +412,6 @@ def _speak_kokoro(text: str, epoch: int) -> None:
     config = _get_stt_config()
     voice = config.get("kokoro_voice", KOKORO_VOICE)
 
-    # Write text to a temp file so the subprocess can read it
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
         f.write(text)
         txt_path = f.name
@@ -408,7 +420,6 @@ def _speak_kokoro(text: str, epoch: int) -> None:
         wav_path = f.name
 
     try:
-        # Run Kokoro in a subprocess to isolate Metal GPU state
         result = subprocess.run(
             [sys.executable, "-c", _KOKORO_SUBPROCESS_SCRIPT,
              txt_path, wav_path, voice],
@@ -418,9 +429,6 @@ def _speak_kokoro(text: str, epoch: int) -> None:
         if result.returncode != 0:
             stderr = result.stderr.decode()[:200] if result.stderr else ""
             raise RuntimeError(f"Kokoro subprocess failed (rc={result.returncode}): {stderr}")
-
-        if _speak_epoch != epoch:
-            return
 
         subprocess.run(
             ["afplay", wav_path],
@@ -452,7 +460,7 @@ with contextlib.redirect_stdout(io.StringIO()):
 """
 
 
-def _speak_edge_tts(text: str, epoch: int) -> None:
+def _speak_edge_tts(text: str, _epoch: int = 0) -> None:
     """Generate and play speech using Edge TTS (cloud, ~1-2s)."""
     import asyncio
     import tempfile
@@ -467,9 +475,6 @@ def _speak_edge_tts(text: str, epoch: int) -> None:
             tmp = f.name
         comm = edge_tts.Communicate(text, voice)
         await comm.save(tmp)
-        if _speak_epoch != epoch:
-            Path(tmp).unlink(missing_ok=True)
-            return
         try:
             subprocess.run(
                 ["afplay", tmp],
@@ -494,35 +499,36 @@ def _speak_say(text: str) -> None:
         pass
 
 
-# Track active speak threads so we can wait for them before exit
-_speak_threads: list = []
-_speak_epoch: int = 0
+# Speech queue — speak() enqueues, worker thread drains in order
+import queue as _queue_mod
+_speech_queue: _queue_mod.Queue = _queue_mod.Queue()
+_speech_worker = None
 
 
-def _stop_current_speech() -> None:
-    """Kill any currently playing afplay so we don't overlap."""
-    try:
-        subprocess.run(["pkill", "-f", "afplay"], capture_output=True)
-    except Exception:
-        pass
-    # Clean up finished threads
-    _speak_threads[:] = [t for t in _speak_threads if t.is_alive()]
 
 
 def wait_for_speech() -> None:
-    """Wait for all pending TTS to finish playing. Call before exiting."""
-    for t in _speak_threads:
-        t.join(timeout=15)
-    _speak_threads.clear()
+    """Wait for all queued TTS to finish playing."""
+    _speech_queue.join()  # blocks until queue is drained
+    # Also wait for worker thread to finish current playback
+    if _speech_worker is not None and _speech_worker.is_alive():
+        _speech_worker.join(timeout=15)
 
 
 def stop_speech() -> None:
-    """Kill any running TTS playback immediately."""
+    """Kill any running TTS playback and clear the queue."""
+    # Clear pending items
+    while not _speech_queue.empty():
+        try:
+            _speech_queue.get_nowait()
+            _speech_queue.task_done()
+        except _queue_mod.Empty:
+            break
+    # Kill currently playing audio
     try:
         subprocess.run(["pkill", "-f", "afplay"], capture_output=True)
     except Exception:
         pass
-    _speak_threads.clear()
 
 
 # ---------------------------------------------------------------------------

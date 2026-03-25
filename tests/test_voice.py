@@ -122,16 +122,18 @@ class TestSpeakFunction:
         from heylux.voice import speak
         assert callable(speak)
 
-    def test_speak_epoch_prevents_overlap(self):
-        """Each speak() call should bump the epoch counter."""
+    def test_speak_queues_text(self):
+        """speak() should enqueue text for the speech worker."""
         import heylux.voice as v
-        old_epoch = v._speak_epoch
-        with patch("heylux.voice._stop_current_speech"):
-            with patch("threading.Thread") as mock_thread_cls:
-                mock_thread = MagicMock()
-                mock_thread_cls.return_value = mock_thread
-                v.speak("test")
-                assert v._speak_epoch == old_epoch + 1
+        # Clear queue
+        while not v._speech_queue.empty():
+            v._speech_queue.get_nowait()
+        # Mock the worker so it doesn't actually start
+        with patch("heylux.voice._ensure_speech_worker"):
+            v.speak("test message")
+            assert not v._speech_queue.empty()
+            item = v._speech_queue.get_nowait()
+            assert item == "test message"
 
 
 class TestGracefulImportError:
