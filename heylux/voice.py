@@ -307,9 +307,12 @@ def _get_tts_model():
 
     # Try Kokoro via mlx-audio (fast, local, no network)
     try:
+        import io as _io, contextlib as _ctx
         from mlx_audio.tts.utils import load_model
         log.info("Loading Kokoro TTS model...")
-        _tts_model = load_model("mlx-community/Kokoro-82M-bf16")
+        # Suppress noisy "Creating new KokoroPipeline" print from library
+        with _ctx.redirect_stdout(_io.StringIO()):
+            _tts_model = load_model("mlx-community/Kokoro-82M-bf16")
         _tts_backend = "kokoro"
         log.info("Kokoro TTS loaded successfully")
         return _tts_model
@@ -391,11 +394,14 @@ def _speak_kokoro(text: str, epoch: int) -> None:
     voice = config.get("kokoro_voice", KOKORO_VOICE)
 
     # Generate audio — Kokoro yields chunks
+    # Suppress noisy "Creating new KokoroPipeline" print from library
+    import io as _io, contextlib as _ctx
     audio_chunks = []
-    for result in _tts_model.generate(text, voice=voice):
-        if _speak_epoch != epoch:
-            return
-        audio_chunks.append(result.audio)
+    with _ctx.redirect_stdout(_io.StringIO()):
+        for result in _tts_model.generate(text, voice=voice):
+            if _speak_epoch != epoch:
+                return
+            audio_chunks.append(result.audio)
 
     if _speak_epoch != epoch:
         return
