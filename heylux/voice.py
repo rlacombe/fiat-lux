@@ -117,7 +117,7 @@ def record_until_silence(
 ) -> np.ndarray | None:
     """Record from microphone until silence is detected.
 
-    Auto-calibrates the noise threshold from the first 0.5s of ambient audio.
+    Auto-calibrates the noise threshold from the first 0.3s of ambient audio.
     Uses a callback-based stream so Ctrl+C works reliably.
     Returns a numpy array of float32 audio at 16kHz, or None if no speech detected.
     """
@@ -125,6 +125,9 @@ def record_until_silence(
     import sounddevice as sd
     import queue
     import time as _time
+
+    t_start = _time.monotonic()
+    log.info("[record] starting mic capture")
 
     # Audio queue — callback pushes chunks, main thread reads them
     audio_queue: queue.Queue = queue.Queue()
@@ -140,7 +143,6 @@ def record_until_silence(
     def _status(text: str) -> None:
         """Overwrite the status line in place."""
         if _console is not None:
-            # Use ANSI escape to clear line and write
             _console.file.write(f"\r\033[K  {text}")
             _console.file.flush()
 
@@ -152,7 +154,7 @@ def record_until_silence(
             blocksize=int(SAMPLE_RATE * 0.1),
             callback=_callback,
         ):
-            # Calibrate: measure ambient noise for 0.5s
+            # Calibrate: measure ambient noise
             ambient_levels = []
             cal_end = _time.monotonic() + CALIBRATION_SECONDS
             while _time.monotonic() < cal_end:
@@ -164,10 +166,14 @@ def record_until_silence(
 
             ambient_rms = max(ambient_levels) if ambient_levels else 0.005
             threshold = ambient_rms * THRESHOLD_MULTIPLIER
+            t_calibrated = _time.monotonic()
+            log.info(f"[record] calibrated in {t_calibrated - t_start:.2f}s "
+                     f"(ambient={ambient_rms:.4f}, threshold={threshold:.4f})")
 
             # Record until silence after speech
             deadline = _time.monotonic() + max_seconds
             min_end = _time.monotonic() + MIN_RECORD_SECONDS
+            t_speech_start = None
             while _time.monotonic() < deadline:
                 try:
                     audio = audio_queue.get(timeout=0.15)
@@ -177,7 +183,6 @@ def record_until_silence(
                 chunks.append(audio)
                 level = _rms(audio)
 
-                # Update volume meter — single line, overwritten
                 if show_meter:
                     bar = format_volume_bar(level)
                     if has_speech:
@@ -188,26 +193,38 @@ def record_until_silence(
                         _status(f"{bar} waiting")
 
                 if level > threshold:
+                    if not has_speech:
+                        t_speech_start = _time.monotonic()
+                        log.info(f"[record] speech detected at {t_speech_start - t_start:.2f}s "
+                                 f"(level={level:.4f} > threshold={threshold:.4f})")
                     has_speech = True
                     silence_chunks = 0
                 else:
                     silence_chunks += 1
 
                 if has_speech and silence_chunks >= silence_limit and _time.monotonic() > min_end:
+                    t_silence = _time.monotonic()
+                    log.info(f"[record] silence detected at {t_silence - t_start:.2f}s "
+                             f"(speech duration ~{t_silence - t_speech_start - silence_seconds:.1f}s + "
+                             f"{silence_seconds}s silence)")
                     break
     except KeyboardInterrupt:
         pass
     finally:
-        # Clear the status line
         if _console is not None:
             _console.file.write("\r\033[K")
             _console.file.flush()
 
+    t_end = _time.monotonic()
     if not has_speech:
+        log.info(f"[record] no speech detected ({t_end - t_start:.2f}s)")
         return None
 
     import numpy as np
-    return np.concatenate(chunks).flatten()
+    audio_out = np.concatenate(chunks).flatten()
+    audio_secs = len(audio_out) / SAMPLE_RATE
+    log.info(f"[record] done: {audio_secs:.1f}s audio captured in {t_end - t_start:.2f}s total")
+    return audio_out
 
 
 def transcribe(audio: np.ndarray) -> str:
@@ -414,7 +431,9 @@ def _speak_kokoro(text: str) -> None:
     subsequent generations are fast (~200ms).
     """
     import tempfile
+    import time as _time
 
+    t0 = _time.monotonic()
     config = _get_stt_config()
     voice = config.get("kokoro_voice", KOKORO_VOICE)
 
@@ -438,11 +457,15 @@ def _speak_kokoro(text: str) -> None:
         if response.get("error"):
             raise RuntimeError(f"Kokoro worker: {response['error']}")
 
+        t_generated = _time.monotonic()
+        log.info(f"[tts] kokoro generated in {t_generated - t0:.2f}s: '{text[:50]}'")
+
         subprocess.run(
             ["afplay", wav_path],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
+        log.info(f"[tts] playback finished in {_time.monotonic() - t_generated:.2f}s")
     except (BrokenPipeError, OSError):
         # Worker died — reset and retry once
         _kill_kokoro_worker()

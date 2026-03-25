@@ -230,14 +230,21 @@ def _send_with_tts(prompt: str, speak_fn) -> None:
 
 async def _send_to_daemon_tts(prompt: str, speak_fn) -> None:
     """Send prompt in voice mode. Stream text to TTS as sentences arrive."""
+    import time as _time
+    import logging
+    _log = logging.getLogger("heylux.voice")
+
+    t0 = _time.monotonic()
     reader, writer = await asyncio.open_unix_connection(str(SOCKET_PATH))
+    _log.info(f"[daemon] connected in {_time.monotonic() - t0:.2f}s")
 
     try:
-        # Send with voice flag so daemon adjusts Claude's behavior
         writer.write(json.dumps({"prompt": prompt, "voice": True}).encode() + b"\n")
         await writer.drain()
+        _log.info(f"[daemon] sent prompt: '{prompt[:60]}'")
 
         first_text = True
+        t_first_text = None
         while True:
             line = await asyncio.wait_for(reader.readline(), timeout=SEND_TIMEOUT)
             if not line:
@@ -247,18 +254,22 @@ async def _send_to_daemon_tts(prompt: str, speak_fn) -> None:
 
             if msg["type"] == "text":
                 if first_text:
+                    t_first_text = _time.monotonic()
+                    _log.info(f"[daemon] first text at {t_first_text - t0:.2f}s")
                     console.print()
                     console.print("[lux.label]Lux:[/lux.label]")
                     first_text = False
+                _log.info(f"[daemon] text: '{msg['text'][:60]}'")
                 console.print(Markdown(msg["text"]), style="lux.text")
-                # Queue each sentence for TTS — the speech queue plays
-                # them in order without cancelling previous ones
                 speak_fn(msg["text"])
             elif msg["type"] == "tool":
+                _log.info(f"[daemon] tool: {msg['name']} at {_time.monotonic() - t0:.2f}s")
                 console.print(f"[lux.tool]  -> {msg['name']}[/lux.tool]")
             elif msg["type"] == "error":
+                _log.info(f"[daemon] error: {msg['text']}")
                 console.print(f"[lux.error]Error: {msg['text']}[/lux.error]")
             elif msg["type"] == "done":
+                _log.info(f"[daemon] done at {_time.monotonic() - t0:.2f}s")
                 break
 
     except asyncio.TimeoutError:
@@ -352,9 +363,17 @@ def _interactive() -> None:
 
 def main() -> None:
     """CLI entry point."""
-    # Suppress noisy multiprocessing semaphore leak warnings on exit
     import warnings
+    import logging
     warnings.filterwarnings("ignore", message=".*resource_tracker.*leaked semaphore.*")
+    # Log to file for debugging voice pipeline
+    log_path = CONFIG_DIR / "voice.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    logging.basicConfig(
+        filename=str(log_path),
+        level=logging.INFO,
+        format="%(asctime)s %(name)s %(message)s",
+    )
 
     args = sys.argv[1:]
 
@@ -541,7 +560,16 @@ def _wake_mode() -> None:
 def voice_main() -> None:
     """Entry point for lux-voice — goes straight to wake word mode."""
     import warnings
+    import logging
     warnings.filterwarnings("ignore", message=".*resource_tracker.*leaked semaphore.*")
+    # Log to file so we can debug voice pipeline performance
+    log_path = CONFIG_DIR / "voice.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    logging.basicConfig(
+        filename=str(log_path),
+        level=logging.INFO,
+        format="%(asctime)s %(name)s %(message)s",
+    )
     _wake_mode()
 
 
