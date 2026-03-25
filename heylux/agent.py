@@ -494,15 +494,18 @@ def _wake_mode() -> None:
         '[lux.text]say "Hey Lux" followed by a command. Ctrl+C to exit.[/lux.text]\n'
     )
 
+    import time as _time
+    import logging
+    _log = logging.getLogger("heylux.voice")
+
     while True:
+        t_start = _time.monotonic()
         command = listen_for_wake_command()
 
         if command is None:
-            # No wake word detected — keep listening
             continue
 
         if command == "":
-            # Just said "Hey Lux" with no command — prompt for more
             speak("Listening.")
             wait_for_speech()
             console.print("[lux.highlight]Listening...[/lux.highlight]")
@@ -511,9 +514,27 @@ def _wake_mode() -> None:
                 continue
             command = text
 
+        t_heard = _time.monotonic()
         console.print(f"[lux.user]You:[/lux.user] {command}\n")
+
         _send_with_tts(command, speak)
+
+        t_responded = _time.monotonic()
         wait_for_speech()
+
+        t_done = _time.monotonic()
+        _log.info(
+            f"[timing] total={t_done - t_start:.1f}s "
+            f"(stt={t_heard - t_start:.1f}s, "
+            f"daemon={t_responded - t_heard:.1f}s, "
+            f"tts={t_done - t_responded:.1f}s)"
+        )
+        console.print(
+            f"[lux.dim]{t_done - t_start:.1f}s "
+            f"(listen {t_heard - t_start:.1f}s + "
+            f"process {t_responded - t_heard:.1f}s + "
+            f"speak {t_done - t_responded:.1f}s)[/lux.dim]"
+        )
         console.print()
 
 

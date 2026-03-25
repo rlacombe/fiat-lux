@@ -33,7 +33,7 @@ CHANNELS = 1  # mono
 SILENCE_DURATION = 1.0  # seconds of silence after speech to auto-stop (was 2.0)
 MAX_DURATION = 120  # max recording seconds (silence detection is the real stop)
 CALIBRATION_SECONDS = 0.3  # measure ambient noise before listening (was 0.5)
-THRESHOLD_MULTIPLIER = 3.5  # speech must be Nx louder than ambient (rejects keyboard clicks)
+THRESHOLD_MULTIPLIER = 2.5  # speech must be Nx louder than ambient
 MIN_RECORD_SECONDS = 0.5  # always record at least this long before checking silence (was 1.0)
 
 # Set by agent.py to enable volume meter display
@@ -381,23 +381,29 @@ def _speech_worker_loop():
 
 def _speak_one(text: str) -> None:
     """Speak a single piece of text synchronously (blocks until audio finishes)."""
+    import time as _time
+    t0 = _time.monotonic()
+
     # Try Kokoro first (local, subprocess-isolated)
     if _tts_backend == "kokoro":
         try:
-            _speak_kokoro(text, 0)
+            _speak_kokoro(text)
+            log.info(f"[timing] tts_kokoro={_time.monotonic() - t0:.2f}s for '{text[:40]}'")
             return
         except Exception as e:
             log.warning(f"Kokoro TTS failed: {e}")
 
     # Fallback: Edge TTS (cloud)
     try:
-        _speak_edge_tts(text, 0)
+        _speak_edge_tts(text)
+        log.info(f"[timing] tts_edge={_time.monotonic() - t0:.2f}s")
         return
     except Exception as e:
         log.warning(f"Edge TTS failed: {e}")
 
     # Last resort: macOS say
     _speak_say(text)
+    log.info(f"[timing] tts_say={_time.monotonic() - t0:.2f}s")
 
 
 def _speak_kokoro(text: str, _epoch: int = 0) -> None:
@@ -552,9 +558,16 @@ def listen_for_wake_command() -> str | None:
 
     This captures "Hey Lux, turn my lights blue" in a single recording.
     """
+    import time as _time
+    t0 = _time.monotonic()
+
     audio = record_until_silence(show_meter=False)
     if audio is None:
         return None
+
+    t_recorded = _time.monotonic()
+    audio_secs = len(audio) / SAMPLE_RATE
+    log.info(f"[timing] recorded {audio_secs:.1f}s audio in {t_recorded - t0:.2f}s")
 
     # Transcribe
     if _console is not None:
@@ -562,6 +575,9 @@ def listen_for_wake_command() -> str | None:
             text = transcribe(audio)
     else:
         text = transcribe(audio)
+
+    t_transcribed = _time.monotonic()
+    log.info(f"[timing] transcribed in {t_transcribed - t_recorded:.2f}s")
 
     if not text:
         return None

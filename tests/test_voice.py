@@ -30,7 +30,7 @@ class TestRecordUntilSilence:
     def test_silence_threshold_calibration(self):
         """Threshold should be THRESHOLD_MULTIPLIER times ambient."""
         from heylux.voice import THRESHOLD_MULTIPLIER
-        assert THRESHOLD_MULTIPLIER == 3.5
+        assert THRESHOLD_MULTIPLIER == 2.5
 
     def test_format_volume_bar(self):
         from heylux.voice import format_volume_bar
