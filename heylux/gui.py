@@ -95,12 +95,13 @@ def _ensure_daemon():
 # ---------------------------------------------------------------------------
 
 def _load_voice():
-    """Lazy-load voice dependencies."""
+    """Lazy-load voice dependencies (STT + TTS models)."""
     global _voice_loaded
     if _voice_loaded:
         return
-    from heylux.voice import ensure_model
-    ensure_model()
+    from heylux.voice import ensure_model, _ensure_tts
+    ensure_model()   # Pre-load STT (lightning-whisper-mlx or openai-whisper)
+    _ensure_tts()    # Pre-load TTS (Kokoro if available)
     _voice_loaded = True
 
 

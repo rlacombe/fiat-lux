@@ -417,6 +417,8 @@ def _load_voice_model():
     with console.status("[lux.highlight]Loading voice model...", spinner="dots"):
         try:
             ensure_model()
+            from heylux.voice import _ensure_tts
+            _ensure_tts()
         except ImportError as e:
             console.print(f"[lux.error]{e}[/lux.error]")
             return None, None
@@ -440,6 +442,8 @@ def _do_voice_in_repl() -> None:
     with console.status("[lux.highlight]Loading voice model...", spinner="dots"):
         try:
             ensure_model()
+            from heylux.voice import _ensure_tts
+            _ensure_tts()
         except ImportError as e:
             console.print(f"[lux.error]{e}[/lux.error]\n")
             return

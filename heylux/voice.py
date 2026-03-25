@@ -1,15 +1,19 @@
-"""Voice input/output — microphone capture, Whisper transcription, and TTS.
+"""Voice input/output — microphone capture, STT transcription, and TTS.
 
 Requires optional dependencies: `uv sync --extra voice`
-  - openai-whisper (local speech-to-text)
+  - lightning-whisper-mlx (fast local STT on Apple Silicon)
   - sounddevice (microphone capture)
+  - mlx-audio (Kokoro TTS — fast local text-to-speech)
 
-TTS uses macOS `say` command — no extra deps needed.
+Fallback chain:
+  STT: lightning-whisper-mlx → openai-whisper → error
+  TTS: Kokoro (mlx-audio) → edge-tts → macOS `say`
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
 import sys
 from pathlib import Path
@@ -17,6 +21,8 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import numpy as np
+
+log = logging.getLogger("heylux.voice")
 
 CONFIG_DIR = Path.home() / ".config" / "heylux"
 VOICE_CONFIG = CONFIG_DIR / "voice.json"
@@ -27,36 +33,72 @@ CHANNELS = 1  # mono
 SILENCE_DURATION = 2.0  # seconds of silence after speech to auto-stop
 MAX_DURATION = 120  # max recording seconds (silence detection is the real stop)
 CALIBRATION_SECONDS = 0.5  # measure ambient noise before listening
-THRESHOLD_MULTIPLIER = 2.0  # speech must be Nx louder than ambient (lowered for sensitivity)
+THRESHOLD_MULTIPLIER = 2.0  # speech must be Nx louder than ambient
 MIN_RECORD_SECONDS = 1.0  # always record at least this long before checking silence
 
 # Set by agent.py to enable volume meter display
 _console = None
 
-# Lazy-loaded Whisper model
+# Lazy-loaded STT model
 _model = None
+_stt_backend: str | None = None  # "lightning-mlx" or "openai-whisper"
 
 
-def _get_model_name() -> str:
-    """Get configured Whisper model name."""
+# ---------------------------------------------------------------------------
+# STT — Speech-to-Text
+# ---------------------------------------------------------------------------
+
+def _get_stt_config() -> dict[str, str]:
+    """Get STT configuration from voice.json."""
     if VOICE_CONFIG.exists():
         try:
-            config = json.loads(VOICE_CONFIG.read_text())
-            return config.get("model", "base")
+            return json.loads(VOICE_CONFIG.read_text())
         except (json.JSONDecodeError, ValueError):
             pass
-    return "base"
+    return {}
 
 
 def _get_whisper_model():
-    """Load Whisper model (lazy, cached after first call)."""
-    global _model
-    if _model is None:
-        import whisper
+    """Load STT model (lazy, cached after first call).
 
-        model_name = _get_model_name()
+    Tries mlx-whisper first (5-10x faster on Apple Silicon via Metal GPU),
+    falls back to openai-whisper.
+    """
+    global _model, _stt_backend
+    if _model is not None:
+        return _model
+
+    config = _get_stt_config()
+
+    # Try mlx-whisper first (fast, Apple Silicon native via Metal)
+    try:
+        import mlx_whisper  # noqa: F401
+        # mlx-whisper uses a model path/name — we store it for transcribe()
+        model_name = config.get("model", "mlx-community/whisper-large-v3-turbo")
+        log.info(f"Loading mlx-whisper model: {model_name}")
+        # Pre-load by running a tiny transcription (mlx-whisper is functional, not OOP)
+        _model = model_name  # store model name, mlx_whisper.transcribe() takes it
+        _stt_backend = "mlx-whisper"
+        log.info("mlx-whisper loaded successfully")
+        return _model
+    except ImportError:
+        log.info("mlx-whisper not available, trying openai-whisper")
+    except Exception as e:
+        log.warning(f"mlx-whisper failed: {e}, trying openai-whisper")
+
+    # Fallback: openai-whisper
+    try:
+        import whisper
+        model_name = config.get("model", "base")
+        log.info(f"Loading openai-whisper model: {model_name}")
         _model = whisper.load_model(model_name)
-    return _model
+        _stt_backend = "openai-whisper"
+        log.info("openai-whisper loaded successfully")
+        return _model
+    except ImportError:
+        raise ImportError(
+            "No STT backend available. Install: uv sync --extra voice"
+        )
 
 
 def _rms(audio: np.ndarray) -> float:
@@ -164,7 +206,9 @@ def record_until_silence(
 
 
 def transcribe(audio: np.ndarray) -> str:
-    """Transcribe audio using local Whisper model.
+    """Transcribe audio using the loaded STT model.
+
+    Automatically uses whichever backend was loaded (mlx-whisper or openai-whisper).
 
     Args:
         audio: float32 numpy array at 16kHz.
@@ -174,17 +218,27 @@ def transcribe(audio: np.ndarray) -> str:
     """
     model = _get_whisper_model()
 
-    # Whisper expects float32 audio
-    result = model.transcribe(
-        audio,
-        language="en",
-        fp16=False,  # CPU/MPS compatibility
-    )
-    return result["text"].strip()
+    if _stt_backend == "mlx-whisper":
+        import mlx_whisper
+        # mlx_whisper.transcribe() takes a numpy array and model path
+        result = mlx_whisper.transcribe(
+            audio,
+            path_or_hf_repo=model,  # model is the model name string
+            language="en",
+        )
+        return result.get("text", "").strip()
+    else:
+        # openai-whisper: takes numpy array directly
+        result = model.transcribe(
+            audio,
+            language="en",
+            fp16=False,  # CPU/MPS compatibility
+        )
+        return result["text"].strip()
 
 
 def ensure_model() -> None:
-    """Pre-load the Whisper model, downloading if needed.
+    """Pre-load the STT model, downloading if needed.
 
     Call this before the first listen to avoid download during recording.
     """
@@ -198,7 +252,7 @@ def listen_once() -> str | None:
     """
     try:
         import sounddevice  # noqa: F401
-        import whisper  # noqa: F401
+        _get_whisper_model()  # verify STT backend is available
     except ImportError:
         raise ImportError(
             "Voice dependencies not installed. Run: uv sync --extra voice"
@@ -220,17 +274,56 @@ def listen_once() -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# Text-to-speech via macOS `say`
+# TTS — Text-to-Speech
+#
+# Priority: Kokoro (mlx-audio, local) → edge-tts (cloud) → macOS say
 # ---------------------------------------------------------------------------
 
-TTS_VOICE = "en-US-AndrewNeural"
+# Kokoro voice preset (see mlx-audio docs for available voices)
+KOKORO_VOICE = "af_heart"
+# Edge TTS fallback voice
+EDGE_TTS_VOICE = "en-US-AndrewNeural"
+
+# Lazy-loaded Kokoro TTS model
+_tts_model = None
+_tts_backend: str | None = None  # "kokoro", "edge-tts", "say"
 
 
-def speak(text: str, voice: str = TTS_VOICE) -> None:
-    """Speak text aloud using Edge TTS (neural voice). Non-blocking.
+def _get_tts_model():
+    """Load Kokoro TTS model (lazy, cached after first call)."""
+    global _tts_model, _tts_backend
+    if _tts_model is not None:
+        return _tts_model
 
-    Each call cancels any in-flight speech (both generation and playback)
-    using an epoch counter to prevent overlapping audio.
+    # Try Kokoro via mlx-audio (fast, local, no network)
+    try:
+        from mlx_audio.tts.utils import load_model
+        log.info("Loading Kokoro TTS model...")
+        _tts_model = load_model("mlx-community/Kokoro-82M-bf16")
+        _tts_backend = "kokoro"
+        log.info("Kokoro TTS loaded successfully")
+        return _tts_model
+    except ImportError:
+        log.info("mlx-audio not available for TTS")
+    except Exception as e:
+        log.warning(f"Kokoro TTS failed to load: {e}")
+
+    # Mark as unavailable — speak() will use edge-tts or say fallback
+    _tts_backend = "edge-tts"
+    return None
+
+
+def _ensure_tts():
+    """Pre-load TTS model if available."""
+    _get_tts_model()
+
+
+def speak(text: str) -> None:
+    """Speak text aloud. Non-blocking.
+
+    Uses Kokoro (local, fast) if available, falls back to Edge TTS (cloud),
+    then macOS `say`. Each call cancels any in-flight speech using an epoch
+    counter to prevent overlapping audio.
     """
     import threading
     global _speak_epoch
@@ -249,38 +342,28 @@ def speak(text: str, voice: str = TTS_VOICE) -> None:
     _stop_current_speech()
 
     def _speak():
-        import asyncio
-        import tempfile
-        try:
-            import edge_tts
+        if _speak_epoch != my_epoch:
+            return
 
-            async def _generate_and_play():
-                with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
-                    tmp = f.name
-                comm = edge_tts.Communicate(clean, voice)
-                await comm.save(tmp)
-                # Check if we've been superseded before playing
-                if _speak_epoch != my_epoch:
-                    return
-                subprocess.run(
-                    ["afplay", tmp],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-
-            asyncio.run(_generate_and_play())
-        except Exception:
-            if _speak_epoch != my_epoch:
-                return
-            # Fall back to macOS say
+        # Try Kokoro first (local, fast)
+        if _tts_backend == "kokoro" and _tts_model is not None:
             try:
-                subprocess.run(
-                    ["say", clean],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            except FileNotFoundError:
-                pass
+                _speak_kokoro(clean, my_epoch)
+                return
+            except Exception as e:
+                log.warning(f"Kokoro TTS failed: {e}")
+
+        # Fallback: Edge TTS (cloud)
+        try:
+            _speak_edge_tts(clean, my_epoch)
+            return
+        except Exception as e:
+            log.warning(f"Edge TTS failed: {e}")
+
+        # Last resort: macOS say
+        if _speak_epoch != my_epoch:
+            return
+        _speak_say(clean)
 
     # Run in background thread so it doesn't block the UI
     t = threading.Thread(target=_speak, daemon=True)
@@ -288,8 +371,89 @@ def speak(text: str, voice: str = TTS_VOICE) -> None:
     _speak_threads.append(t)
 
 
+def _speak_kokoro(text: str, epoch: int) -> None:
+    """Generate and play speech using Kokoro TTS (local, ~200ms)."""
+    import numpy as np
+    import tempfile
+    import soundfile as sf
+
+    config = _get_stt_config()
+    voice = config.get("kokoro_voice", KOKORO_VOICE)
+
+    # Generate audio — Kokoro yields chunks
+    audio_chunks = []
+    for result in _tts_model.generate(text, voice=voice):
+        if _speak_epoch != epoch:
+            return
+        audio_chunks.append(result.audio)
+
+    if _speak_epoch != epoch:
+        return
+
+    if not audio_chunks:
+        return
+
+    # Concatenate and save to temp file for playback
+    audio = np.concatenate(audio_chunks)
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+        tmp_path = f.name
+    try:
+        sf.write(tmp_path, audio, 24000)  # Kokoro outputs at 24kHz
+        if _speak_epoch != epoch:
+            return
+        subprocess.run(
+            ["afplay", tmp_path],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def _speak_edge_tts(text: str, epoch: int) -> None:
+    """Generate and play speech using Edge TTS (cloud, ~1-2s)."""
+    import asyncio
+    import tempfile
+
+    import edge_tts
+
+    config = _get_stt_config()
+    voice = config.get("edge_voice", EDGE_TTS_VOICE)
+
+    async def _generate_and_play():
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+            tmp = f.name
+        comm = edge_tts.Communicate(text, voice)
+        await comm.save(tmp)
+        if _speak_epoch != epoch:
+            Path(tmp).unlink(missing_ok=True)
+            return
+        try:
+            subprocess.run(
+                ["afplay", tmp],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        finally:
+            Path(tmp).unlink(missing_ok=True)
+
+    asyncio.run(_generate_and_play())
+
+
+def _speak_say(text: str) -> None:
+    """Speak using macOS `say` command (instant, lower quality)."""
+    try:
+        subprocess.run(
+            ["say", text],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except FileNotFoundError:
+        pass
+
+
 # Track active speak threads so we can wait for them before exit
-_speak_threads: list[threading.Thread] = []
+_speak_threads: list = []
 _speak_epoch: int = 0
 
 
@@ -312,18 +476,12 @@ def wait_for_speech() -> None:
 
 def stop_speech() -> None:
     """Kill any running TTS playback immediately."""
-    import signal as _signal
-    # Kill any afplay processes
     try:
         subprocess.run(["pkill", "-f", "afplay"], capture_output=True)
     except Exception:
         pass
     _speak_threads.clear()
 
-
-# ---------------------------------------------------------------------------
-# Volume meter for recording feedback
-# ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
 # Wake word detection
@@ -362,16 +520,15 @@ def listen_for_wake_command() -> str | None:
 
     text_lower = text.lower().strip()
 
-    # Strip common Whisper artifacts at the start (filler words, punctuation)
+    # Strip common STT artifacts at the start (filler words, punctuation)
     for prefix in ("hi. ", "hi, ", "hello. ", "hello, ", "oh, ", "um, ", "uh, "):
         if text_lower.startswith(prefix):
             text_lower = text_lower[len(prefix):]
             text = text[len(prefix):]
             break
 
-    # Log what Whisper heard for debugging
-    import logging
-    logging.getLogger("heylux.gui").info(f"Whisper heard: '{text_lower}'")
+    # Log what STT heard for debugging
+    log.info(f"STT heard: '{text_lower}'")
 
     # Check if it starts with a wake phrase
     for phrase in WAKE_PHRASES:

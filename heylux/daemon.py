@@ -302,16 +302,34 @@ async def _handle_client(
             _remove_voice_mode(options)
 
         # Tier 2: Claude via persistent ClaudeSDKClient
+        #
+        # In voice mode, split text blocks into sentences so the GUI can
+        # start TTS on the first sentence before Claude finishes generating.
+        import re
+        _sentence_re = re.compile(r'(?<=[.!?])\s+')
+
         await client.query(prompt)
         async for message in client.receive_response():
             if isinstance(message, AssistantMessage):
                 for block in message.content:
                     if hasattr(block, "text") and block.text:
-                        writer.write(
-                            json.dumps({"type": "text", "text": block.text}).encode()
-                            + b"\n"
-                        )
-                        await writer.drain()
+                        if voice_mode:
+                            # Split into sentences for faster time-to-first-audio
+                            sentences = _sentence_re.split(block.text)
+                            for sentence in sentences:
+                                sentence = sentence.strip()
+                                if sentence:
+                                    writer.write(
+                                        json.dumps({"type": "text", "text": sentence}).encode()
+                                        + b"\n"
+                                    )
+                                    await writer.drain()
+                        else:
+                            writer.write(
+                                json.dumps({"type": "text", "text": block.text}).encode()
+                                + b"\n"
+                            )
+                            await writer.drain()
                     elif hasattr(block, "name"):
                         writer.write(
                             json.dumps(

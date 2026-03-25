@@ -7,25 +7,29 @@ requires-python = ">=3.12"
 license = "MIT"
 dependencies = [
     "claude-agent-sdk",
-    "edge-tts>=7.2.8",
     "phue>=1.1",
     "rich",
 ]
 
 [project.optional-dependencies]
 voice = [
-    "openai-whisper",
+    "mlx-whisper>=0.4.0",
     "sounddevice",
+    "mlx-audio>=0.4.0",
 ]
 gui = [
-    "openai-whisper",
+    "mlx-whisper>=0.4.0",
     "sounddevice",
+    "mlx-audio>=0.4.0",
     "rumps>=0.4.0",
     "pyobjc-framework-Cocoa>=12.1",
 ]
 
 [tool.uv]
 package = true
+# mlx-whisper depends on tiktoken but doesn't pin a version.
+# Force the version that has pre-built wheels for Apple Silicon.
+override-dependencies = ["tiktoken>=0.5"]
 
 [build-system]
 requires = ["hatchling"]
