@@ -123,6 +123,8 @@ def try_shortcut(text: str) -> str | None:
     # --- Circadian ---
     if text in ("circadian", "set for now", "set to now", "optimize", "auto"):
         return _apply_circadian()
+    if re.search(r'\b(circadian|circadium|circanium)\b', text):
+        return _apply_circadian()
 
     # --- Routines ---
     if text in ("routines", "list routines"):
@@ -134,10 +136,21 @@ def try_shortcut(text: str) -> str | None:
             lines.append(f"  {name} — {desc}")
         return "\n".join(lines)
 
-    # Try matching a routine name directly
+    # Try matching a routine name directly, or with "mode" suffix
     result = run_routine(text)
     if result is not None:
         return result
+    # "coding mode" → try "coding", "focus mode" → try "focus"
+    if text.endswith(" mode"):
+        result = run_routine(text[:-5])
+        if result is not None:
+            return result
+    # "activate coding" → try "coding"
+    for prefix in ("activate ", "set ", "switch to ", "turn on "):
+        if text.startswith(prefix):
+            result = run_routine(text[len(prefix):].rstrip(" mode"))
+            if result is not None:
+                return result
 
     return None
 

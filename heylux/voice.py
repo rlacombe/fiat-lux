@@ -734,14 +734,19 @@ def listen_for_wake_command() -> str | None:
     log.info(f"STT heard: '{text_lower}'")
 
     # Check if it starts with a wake phrase
-    for phrase in WAKE_PHRASES:
+    for phrase in sorted(WAKE_PHRASES, key=len, reverse=True):
         if text_lower.startswith(phrase):
-            # Strip the wake word and return the command
-            command = text[len(phrase):].strip().lstrip(".,!?:").strip()
-            if command:
-                return command
-            # They just said "Hey Lux" with no command — return empty
-            # so the caller knows to prompt for more
+            # Strip wake word — eat any trailing letters/punctuation that
+            # are part of the transcription's version of the wake word
+            # (e.g. "hey, luxe" matches "hey, lux" but leaves "e")
+            rest = text_lower[len(phrase):]
+            # Strip leftover letters (from "luxe" → "e"), then punctuation
+            rest = rest.lstrip("abcdefghijklmnopqrstuvwxyz")
+            rest = rest.lstrip(".,!?:; ")
+            if rest:
+                # Find the command in the original text (preserve casing)
+                cmd_start = len(text) - len(rest)
+                return text[cmd_start:].strip()
             return ""
 
     return None
