@@ -30,11 +30,12 @@ VOICE_CONFIG = CONFIG_DIR / "voice.json"
 # Audio settings
 SAMPLE_RATE = 16000  # Whisper expects 16kHz
 CHANNELS = 1  # mono
-SILENCE_DURATION = 1.0  # seconds of silence after speech to auto-stop (was 2.0)
-MAX_DURATION = 120  # max recording seconds (silence detection is the real stop)
-CALIBRATION_SECONDS = 0.3  # measure ambient noise before listening (was 0.5)
+SILENCE_DURATION = 1.0  # seconds of silence after speech to auto-stop
+MAX_DURATION = 10  # max recording seconds (short voice commands)
+CALIBRATION_SECONDS = 0.3  # measure ambient noise before listening
 THRESHOLD_MULTIPLIER = 2.5  # speech must be Nx louder than ambient
-MIN_RECORD_SECONDS = 0.5  # always record at least this long before checking silence (was 1.0)
+THRESHOLD_FLOOR = 0.005  # minimum absolute threshold (prevents near-zero ambient issues)
+MIN_RECORD_SECONDS = 0.5  # always record at least this long before checking silence
 
 # Set by agent.py to enable volume meter display
 _console = None
@@ -165,7 +166,7 @@ def record_until_silence(
                     pass
 
             ambient_rms = max(ambient_levels) if ambient_levels else 0.005
-            threshold = ambient_rms * THRESHOLD_MULTIPLIER
+            threshold = max(ambient_rms * THRESHOLD_MULTIPLIER, THRESHOLD_FLOOR)
             t_calibrated = _time.monotonic()
             log.info(f"[record] calibrated in {t_calibrated - t_start:.2f}s "
                      f"(ambient={ambient_rms:.4f}, threshold={threshold:.4f})")

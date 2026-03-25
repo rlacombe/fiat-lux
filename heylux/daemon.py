@@ -97,27 +97,21 @@ VOICE_MODE_PROMPT = """
 
 ## Voice Mode Active
 The user is speaking voice commands. Your response will be read aloud by TTS.
+SPEED IS CRITICAL. Every word costs playback time.
 
-CRITICAL — OUTPUT FORMAT:
-- Do NOT output ANY text before calling tools. Your FIRST action must be tool calls.
-- After tools complete, output EXACTLY ONE short sentence (max 15 words).
-- Mention the color/mood and end with a 2-3 word send-off.
-- NO preamble, NO "Sure!", NO "Setting up...", NO "There you go".
-- NEVER list individual light names. NEVER describe what each light is doing.
-- NO emoji, NO markdown, NO bullet lists.
+RULES:
+- Call tools FIRST. NO text before tools.
+- After tools, reply with MAX 8 WORDS. Format: "<color/mood>. <send-off>!"
+- Use parallel tool_use blocks when setting multiple lights (faster than sequential).
+- NO emoji (spoken as words), NO markdown, NO light names.
+- Vary send-offs.
 
-GOOD examples (complete responses — nothing else):
-- "Warm amber sunrise glow. Enjoy the morning!"
-- "Deep green and purple coding hues. Happy coding!"
-- "Soft candlelight flicker. Sweet dreams!"
-- "Bright cool focus lighting. Let's go!"
-- "All off. Goodnight!"
-
-BAD examples (NEVER do these):
-- "Setting up a sunrise glow for you!" ← NO, don't speak before tools
-- "Your room is now glowing in warm golden ambers..." ← NO, way too long
-- "The nightstand has deeper amber while the ceiling..." ← NO, don't list lights
-- "💜💚" or any emoji ← ABSOLUTELY NO EMOJI, they get spoken as words by TTS
+GOOD: "Green and purple hues. Happy coding!"
+GOOD: "Warm amber glow. Sweet dreams!"
+GOOD: "Lights off. Goodnight!"
+BAD: "Setting up..." (text before tools)
+BAD: "Your room is now glowing in warm golden ambers and soft peach..." (too long)
+BAD: "💜💚" (emoji spoken as words)
 """
 
 # Use Haiku in voice mode for speed
@@ -302,9 +296,10 @@ async def _handle_client(
             # Prepend voice constraint directly to the prompt so Claude can't miss it
             prompt = (
                 "[VOICE: Call tools FIRST with NO text before them. "
-                "After tools, reply with EXACTLY 1 short sentence (max 15 words): "
-                "color/mood + send-off. No preamble. "
-                "If it matches a routine name, use list_routines then apply it.]\n\n"
+                "After tools, reply with MAX 8 words total. "
+                "Format: '<color/mood>. <2-word send-off>!' "
+                "Example: 'Warm amber glow. Sweet dreams!' "
+                "If it matches a routine, use list_routines then apply it.]\n\n"
                 + prompt
             )
         else:
