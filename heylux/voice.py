@@ -193,11 +193,24 @@ def record_until_silence(
                     else:
                         _status(f"{bar} waiting")
                 else:
-                    # Minimal feedback in wake mode — show when hearing speech
-                    if has_speech:
-                        _status("\033[1;38;2;158;206;106m\u25cf recording...\033[0m")
-                    elif level > threshold:
-                        _status("\033[1;38;2;224;175;104m\u25cf hearing you\033[0m")
+                    # Minimal feedback in wake mode — dot scales with volume
+                    if level > threshold or has_speech:
+                        # Map level to dot intensity: dim ·  medium ●  loud ⬤
+                        intensity = min(1.0, level / (threshold * 4))
+                        if intensity > 0.6:
+                            dot = "\u2b24"  # ⬤ large filled
+                        elif intensity > 0.3:
+                            dot = "\u25cf"  # ● medium filled
+                        else:
+                            dot = "\u00b7"  # · small dot
+                        if has_speech:
+                            # Green when recording
+                            g = int(160 + 95 * intensity)
+                            _status(f"\033[1;38;2;120;{g};80m{dot} recording\033[0m")
+                        else:
+                            # Amber on first detection
+                            r = int(180 + 75 * intensity)
+                            _status(f"\033[38;2;{r};175;80m{dot}\033[0m")
 
                 if level > threshold:
                     if not has_speech:
