@@ -132,7 +132,7 @@ uv sync --extra voice
 lux listen                 # say "Hey Lux" followed by a command
 ```
 
-First run downloads the STT and TTS models (~1GB total). Requires Apple Silicon (M1+).
+Voice uses [MLX Whisper](https://github.com/ml-explore/mlx-examples) (local STT) and [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) (local TTS) — both run on Apple Silicon via Metal. First run downloads the models (~1GB total).
 
 ## Usage
 
