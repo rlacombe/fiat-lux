@@ -302,34 +302,27 @@ _tts_backend: str | None = None  # "kokoro", "edge-tts", "say"
 
 
 def _get_tts_model():
-    """Load Kokoro TTS model (lazy, cached after first call)."""
-    global _tts_model, _tts_backend
-    if _tts_model is not None:
-        return _tts_model
+    """Check TTS backend availability (lazy, cached after first call).
 
-    # Try Kokoro via mlx-audio (fast, local, no network)
+    Kokoro runs in a subprocess to isolate Metal GPU state, so we don't
+    load the model here — just check if the import works.
+    """
+    global _tts_backend
+    if _tts_backend is not None:
+        return
+
+    # Check if Kokoro/mlx-audio is importable
     try:
-        import io as _io, contextlib as _ctx
-        from mlx_audio.tts.utils import load_model
-        log.info("Loading Kokoro TTS model...")
-        # Suppress noisy "Creating new KokoroPipeline" print from library
-        with _ctx.redirect_stdout(_io.StringIO()):
-            _tts_model = load_model("mlx-community/Kokoro-82M-bf16")
+        import mlx_audio  # noqa: F401
         _tts_backend = "kokoro"
-        log.info("Kokoro TTS loaded successfully")
-        return _tts_model
+        log.info("Kokoro TTS available (will run in subprocess)")
     except ImportError:
-        log.info("mlx-audio not available for TTS")
-    except Exception as e:
-        log.warning(f"Kokoro TTS failed to load: {e}")
-
-    # Mark as unavailable — speak() will use edge-tts or say fallback
-    _tts_backend = "edge-tts"
-    return None
+        log.info("mlx-audio not available, using edge-tts fallback")
+        _tts_backend = "edge-tts"
 
 
 def _ensure_tts():
-    """Pre-load TTS model if available."""
+    """Check TTS backend availability."""
     _get_tts_model()
 
 
@@ -360,8 +353,8 @@ def speak(text: str) -> None:
         if _speak_epoch != my_epoch:
             return
 
-        # Try Kokoro first (local, fast)
-        if _tts_backend == "kokoro" and _tts_model is not None:
+        # Try Kokoro first (local, subprocess-isolated)
+        if _tts_backend == "kokoro":
             try:
                 _speak_kokoro(clean, my_epoch)
                 return
@@ -387,45 +380,68 @@ def speak(text: str) -> None:
 
 
 def _speak_kokoro(text: str, epoch: int) -> None:
-    """Generate and play speech using Kokoro TTS (local, ~200ms)."""
-    import numpy as np
+    """Generate and play speech using Kokoro TTS in a subprocess.
+
+    Runs in a separate process to isolate Metal GPU operations from the
+    main process (prevents segfaults when mlx-whisper and Kokoro compete
+    for GPU memory).
+    """
     import tempfile
-    import soundfile as sf
 
     config = _get_stt_config()
     voice = config.get("kokoro_voice", KOKORO_VOICE)
 
-    # Generate audio — Kokoro yields chunks
-    # Suppress noisy "Creating new KokoroPipeline" print from library
-    import io as _io, contextlib as _ctx
-    audio_chunks = []
-    with _ctx.redirect_stdout(_io.StringIO()):
-        for result in _tts_model.generate(text, voice=voice):
-            if _speak_epoch != epoch:
-                return
-            audio_chunks.append(result.audio)
+    # Write text to a temp file so the subprocess can read it
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+        f.write(text)
+        txt_path = f.name
 
-    if _speak_epoch != epoch:
-        return
-
-    if not audio_chunks:
-        return
-
-    # Concatenate and save to temp file for playback
-    audio = np.concatenate(audio_chunks)
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-        tmp_path = f.name
+        wav_path = f.name
+
     try:
-        sf.write(tmp_path, audio, 24000)  # Kokoro outputs at 24kHz
+        # Run Kokoro in a subprocess to isolate Metal GPU state
+        result = subprocess.run(
+            [sys.executable, "-c", _KOKORO_SUBPROCESS_SCRIPT,
+             txt_path, wav_path, voice],
+            capture_output=True,
+            timeout=15,
+        )
+        if result.returncode != 0:
+            stderr = result.stderr.decode()[:200] if result.stderr else ""
+            raise RuntimeError(f"Kokoro subprocess failed (rc={result.returncode}): {stderr}")
+
         if _speak_epoch != epoch:
             return
+
         subprocess.run(
-            ["afplay", tmp_path],
+            ["afplay", wav_path],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
     finally:
-        Path(tmp_path).unlink(missing_ok=True)
+        Path(txt_path).unlink(missing_ok=True)
+        Path(wav_path).unlink(missing_ok=True)
+
+
+# Script run in a subprocess for Kokoro TTS generation.
+# Isolates Metal GPU operations from the main process.
+_KOKORO_SUBPROCESS_SCRIPT = """\
+import sys, contextlib, io
+txt_path, wav_path, voice = sys.argv[1], sys.argv[2], sys.argv[3]
+
+text = open(txt_path).read()
+
+with contextlib.redirect_stdout(io.StringIO()):
+    from mlx_audio.tts.utils import load_model
+    model = load_model("mlx-community/Kokoro-82M-bf16")
+    import numpy as np, soundfile as sf
+    chunks = []
+    for result in model.generate(text, voice=voice):
+        chunks.append(result.audio)
+    if chunks:
+        sf.write(wav_path, np.concatenate(chunks), 24000)
+"""
 
 
 def _speak_edge_tts(text: str, epoch: int) -> None:
