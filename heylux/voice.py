@@ -264,7 +264,32 @@ def transcribe(audio: np.ndarray) -> str:
 
     elapsed = _time.monotonic() - t0
     log.info(f"Transcribed {audio_secs:.1f}s audio in {elapsed:.2f}s: '{text[:60]}'")
+
+    # Guard against whisper-tiny hallucinations (repeated phrases on silence)
+    if text and _is_hallucination(text):
+        log.info(f"[stt] discarded hallucination: '{text[:60]}'")
+        return ""
+
     return text
+
+
+def _is_hallucination(text: str) -> bool:
+    """Detect whisper-tiny hallucinations: repeated phrases on quiet audio."""
+    import re
+    # Normalize: lowercase, strip punctuation, collapse whitespace
+    clean = re.sub(r'[^\w\s]', '', text.lower())
+    clean = re.sub(r'\s+', ' ', clean).strip()
+    words = clean.split()
+    if len(words) < 4:
+        return False
+    # Check if the text is just the same short phrase repeated
+    for phrase_len in range(1, min(9, len(words) // 2 + 1)):
+        phrase = " ".join(words[:phrase_len])
+        rest = " ".join(words[phrase_len:])
+        if rest.startswith(phrase):
+            log.info(f"[stt] hallucination detected: '{phrase}' repeated")
+            return True
+    return False
 
 
 def ensure_model() -> None:
@@ -662,6 +687,8 @@ WAKE_PHRASES = {
     "a lux", "haylux", "hey, lux", "he lux", "hey lex",
     "hey, lex", "hey, lucks", "hey, luck", "hey, lox",
     "helix", "he licks", "hey likes", "hey legs",
+    "hey lacks", "hey, lacks", "hey lacs", "hey, lacs",
+    "hey lucks,", "hey laks", "hey, laks",
 }
 
 
