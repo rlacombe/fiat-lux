@@ -114,7 +114,6 @@ def _rms(audio: np.ndarray) -> float:
 def record_until_silence(
     max_seconds: float = MAX_DURATION,
     silence_seconds: float = SILENCE_DURATION,
-    show_meter: bool = True,
 ) -> np.ndarray | None:
     """Record from microphone until silence is detected.
 
@@ -184,33 +183,24 @@ def record_until_silence(
                 chunks.append(audio)
                 level = _rms(audio)
 
-                if show_meter:
-                    bar = format_volume_bar(level)
-                    if has_speech:
-                        _status(f"{bar} recording")
-                    elif level > threshold:
-                        _status(f"{bar} hearing you")
-                    else:
-                        _status(f"{bar} waiting")
+                # Volume bar + scaled dot indicator
+                bar = format_volume_bar(level)
+                intensity = min(1.0, level / max(threshold * 4, 0.001))
+                if intensity > 0.6:
+                    dot = "\u2b24"  # ⬤ loud
+                elif intensity > 0.3:
+                    dot = "\u25cf"  # ● medium
                 else:
-                    # Minimal feedback in wake mode — dot scales with volume
-                    if level > threshold or has_speech:
-                        # Map level to dot intensity: dim ·  medium ●  loud ⬤
-                        intensity = min(1.0, level / (threshold * 4))
-                        if intensity > 0.6:
-                            dot = "\u2b24"  # ⬤ large filled
-                        elif intensity > 0.3:
-                            dot = "\u25cf"  # ● medium filled
-                        else:
-                            dot = "\u00b7"  # · small dot
-                        if has_speech:
-                            # Green when recording
-                            g = int(160 + 95 * intensity)
-                            _status(f"\033[1;38;2;120;{g};80m{dot} recording\033[0m")
-                        else:
-                            # Amber on first detection
-                            r = int(180 + 75 * intensity)
-                            _status(f"\033[38;2;{r};175;80m{dot}\033[0m")
+                    dot = "\u00b7"  # · quiet
+
+                if has_speech:
+                    g = int(160 + 95 * intensity)
+                    _status(f"{bar} \033[1;38;2;120;{g};80m{dot} recording\033[0m")
+                elif level > threshold:
+                    r = int(180 + 75 * intensity)
+                    _status(f"{bar} \033[38;2;{r};175;80m{dot} hearing you\033[0m")
+                else:
+                    _status(f"{bar} {dot}")
 
                 if level > threshold:
                     if not has_speech:
@@ -728,7 +718,7 @@ def listen_for_wake_command() -> str | None:
     import time as _time
     t0 = _time.monotonic()
 
-    audio = record_until_silence(show_meter=False)
+    audio = record_until_silence()
     if audio is None:
         return None
 
