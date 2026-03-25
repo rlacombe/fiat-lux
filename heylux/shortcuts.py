@@ -52,6 +52,8 @@ def _clean_voice_text(text: str) -> str:
         text = f"{m.group(2)} on {m.group(1)}"
     # Strip articles/possessives before light names (after "on")
     text = re.sub(r'\bon\s+(the|my|our)\s+', 'on ', text)
+    # Strip stray articles anywhere ("activate the coding mode" → "activate coding mode")
+    text = re.sub(r'\b(the|a)\s+', '', text).strip()
     return text
 
 

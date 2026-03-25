@@ -713,6 +713,7 @@ WAKE_PHRASES = {
     "helix", "he licks", "hey likes", "hey legs",
     "hey lacks", "hey, lacks", "hey lacs", "hey, lacs",
     "hey lucks,", "hey laks", "hey, laks",
+    "he looks", "he looks,",
 }
 
 
