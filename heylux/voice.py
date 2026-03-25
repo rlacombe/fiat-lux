@@ -113,6 +113,7 @@ def _rms(audio: np.ndarray) -> float:
 def record_until_silence(
     max_seconds: float = MAX_DURATION,
     silence_seconds: float = SILENCE_DURATION,
+    show_meter: bool = True,
 ) -> np.ndarray | None:
     """Record from microphone until silence is detected.
 
@@ -177,13 +178,14 @@ def record_until_silence(
                 level = _rms(audio)
 
                 # Update volume meter — single line, overwritten
-                bar = format_volume_bar(level)
-                if has_speech:
-                    _status(f"{bar} recording")
-                elif level > threshold:
-                    _status(f"{bar} hearing you")
-                else:
-                    _status(f"{bar} waiting")
+                if show_meter:
+                    bar = format_volume_bar(level)
+                    if has_speech:
+                        _status(f"{bar} recording")
+                    elif level > threshold:
+                        _status(f"{bar} hearing you")
+                    else:
+                        _status(f"{bar} waiting")
 
                 if level > threshold:
                     has_speech = True
@@ -520,7 +522,7 @@ def listen_for_wake_command() -> str | None:
 
     This captures "Hey Lux, turn my lights blue" in a single recording.
     """
-    audio = record_until_silence()
+    audio = record_until_silence(show_meter=False)
     if audio is None:
         return None
 
