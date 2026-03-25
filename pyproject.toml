@@ -16,11 +16,21 @@ voice = [
     "mlx-whisper>=0.4.0",
     "sounddevice",
     "mlx-audio>=0.4.0",
+    "misaki>=0.7.0",
+    "num2words",
+    "spacy",
+    "phonemizer-fork",
+    "espeakng-loader",
 ]
 gui = [
     "mlx-whisper>=0.4.0",
     "sounddevice",
     "mlx-audio>=0.4.0",
+    "misaki>=0.7.0",
+    "num2words",
+    "spacy",
+    "phonemizer-fork",
+    "espeakng-loader",
     "rumps>=0.4.0",
     "pyobjc-framework-Cocoa>=12.1",
 ]
