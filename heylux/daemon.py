@@ -307,10 +307,14 @@ async def _handle_client(
 
         # Tier 2: Claude via persistent ClaudeSDKClient
         #
-        # In voice mode, split text blocks into sentences so the GUI can
-        # start TTS on the first sentence before Claude finishes generating.
+        # In voice mode, accumulate all text into one block so TTS
+        # generates a single audio file (faster than multiple subprocess calls).
         import re
-        _sentence_re = re.compile(r'(?<=[.!?])\s+')
+        _emoji_re = re.compile(
+            r'[\U0001F300-\U0001F9FF\U00002600-\U000027BF'
+            r'\U0000FE00-\U0000FEFF\U0001FA00-\U0001FAFF]+'
+        )
+        voice_text_parts = []
 
         await client.query(prompt)
         async for message in client.receive_response():
@@ -318,16 +322,10 @@ async def _handle_client(
                 for block in message.content:
                     if hasattr(block, "text") and block.text:
                         if voice_mode:
-                            # Split into sentences for faster time-to-first-audio
-                            sentences = _sentence_re.split(block.text)
-                            for sentence in sentences:
-                                sentence = sentence.strip()
-                                if sentence:
-                                    writer.write(
-                                        json.dumps({"type": "text", "text": sentence}).encode()
-                                        + b"\n"
-                                    )
-                                    await writer.drain()
+                            # Accumulate text, strip emoji
+                            clean = _emoji_re.sub('', block.text).strip()
+                            if clean:
+                                voice_text_parts.append(clean)
                         else:
                             writer.write(
                                 json.dumps({"type": "text", "text": block.text}).encode()
@@ -351,6 +349,14 @@ async def _handle_client(
                         + b"\n"
                     )
                     await writer.drain()
+
+        # In voice mode, send accumulated text as one block
+        if voice_mode and voice_text_parts:
+            full_text = " ".join(voice_text_parts)
+            writer.write(
+                json.dumps({"type": "text", "text": full_text}).encode() + b"\n"
+            )
+            await writer.drain()
 
         writer.write(json.dumps({"type": "done"}).encode() + b"\n")
         await writer.drain()
